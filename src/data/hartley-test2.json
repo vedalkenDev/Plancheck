@@ -7,7 +7,7 @@
   "erf": null,
   "address": "130 Hartley Road, Sydenham",
   "occupancy": "G1",
-  "occupancyNote": "G1 medical offices (TEST2)",
+  "occupancyNote": "medical offices (TEST2)",
   "verdict": "Not stamp-ready.",
   "passed": [
     {
