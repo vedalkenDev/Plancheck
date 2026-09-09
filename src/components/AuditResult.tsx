@@ -35,7 +35,7 @@ export function AuditResult({ audit, source, onReset }: AuditResultProps) {
       <div className={styles.toolbar}>
         <p className={styles.kicker}>
           {source === "upload"
-            ? `Uploaded drawing · showing ${audit.label} as an example`
+            ? `Uploaded drawing · ${audit.label}`
             : `Sample audit · ${audit.label}`}
         </p>
         <button className={styles.textBtn} type="button" onClick={onReset}>

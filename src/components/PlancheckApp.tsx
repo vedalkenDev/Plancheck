@@ -3,30 +3,29 @@
 import { useId, useRef, useState } from "react";
 import { AuditResult } from "@/components/AuditResult";
 import type { AuditSample } from "@/data/types";
+import { auditFromDrawing, extractDrawing } from "@/lib/cad";
 import styles from "@/app/plancheck/plancheck.module.css";
 
 type PlancheckAppProps = {
   samples: AuditSample[];
-  uploadStandIn: AuditSample;
 };
 
 const DRAWING_NAME = /\.(dwg|dxf)$/i;
-const ENGINE_NOTE =
-  "A live check of this drawing is coming. For now, here is 130 Hartley Road so you can see the report.";
+const MAX_BYTES = 40 * 1024 * 1024;
 
-export function PlancheckApp({ samples, uploadStandIn }: PlancheckAppProps) {
+export function PlancheckApp({ samples }: PlancheckAppProps) {
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const [audit, setAudit] = useState<AuditSample | null>(null);
   const [source, setSource] = useState<"sample" | "upload">("sample");
   const [error, setError] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const [reading, setReading] = useState(false);
 
   function reset() {
     setAudit(null);
     setSource("sample");
     setError(null);
-    setToast(null);
+    setReading(false);
     if (inputRef.current) {
       inputRef.current.value = "";
     }
@@ -34,12 +33,12 @@ export function PlancheckApp({ samples, uploadStandIn }: PlancheckAppProps) {
 
   function loadSample(sample: AuditSample) {
     setError(null);
-    setToast(null);
+    setReading(false);
     setSource("sample");
     setAudit(sample);
   }
 
-  function onFile(file: File | undefined) {
+  async function onFile(file: File | undefined) {
     if (!file) {
       return;
     }
@@ -49,10 +48,25 @@ export function PlancheckApp({ samples, uploadStandIn }: PlancheckAppProps) {
       return;
     }
 
+    if (file.size > MAX_BYTES) {
+      setError("That drawing is too large to read here. Save a DXF and try again.");
+      return;
+    }
+
     setError(null);
-    setSource("upload");
-    setAudit(uploadStandIn);
-    setToast(ENGINE_NOTE);
+    setReading(true);
+
+    try {
+      const bytes = await file.arrayBuffer();
+      const extract = extractDrawing(file.name, bytes);
+      const result = auditFromDrawing(file.name, extract);
+      setSource("upload");
+      setAudit(result);
+    } catch {
+      setError("The drawing could not be read. Save a DXF from your CAD software and try again.");
+    } finally {
+      setReading(false);
+    }
   }
 
   return (
@@ -78,7 +92,7 @@ export function PlancheckApp({ samples, uploadStandIn }: PlancheckAppProps) {
             onDragOver={(event) => event.preventDefault()}
             onDrop={(event) => {
               event.preventDefault();
-              onFile(event.dataTransfer.files[0]);
+              void onFile(event.dataTransfer.files[0]);
             }}
           >
             <input
@@ -87,10 +101,10 @@ export function PlancheckApp({ samples, uploadStandIn }: PlancheckAppProps) {
               className={styles.file}
               type="file"
               accept=".dwg,.dxf,application/acad,image/vnd.dwg,image/vnd.dxf"
-              onChange={(event) => onFile(event.target.files?.[0])}
+              onChange={(event) => void onFile(event.target.files?.[0])}
             />
             <p className={styles.zoneTitle}>
-              Choose a drawing file (.dwg or .dxf)
+              {reading ? "Reading the drawing…" : "Choose a drawing file (.dwg or .dxf)"}
             </p>
             <p className={styles.zoneHint}>
               You will get a pass/fail checklist before you submit.
@@ -120,12 +134,6 @@ export function PlancheckApp({ samples, uploadStandIn }: PlancheckAppProps) {
           </div>
         </>
       )}
-
-      {toast ? (
-        <p className={styles.toast} role="status" aria-live="polite">
-          {toast}
-        </p>
-      ) : null}
     </div>
   );
 }
