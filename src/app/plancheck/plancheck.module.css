@@ -1,0 +1,302 @@
+.claim {
+  font-family: var(--font-serif), "Source Serif 4", Georgia, serif;
+  font-weight: 400;
+  font-size: clamp(2.05rem, 5.4vw, 3.35rem);
+  line-height: 1.12;
+  letter-spacing: -0.028em;
+  margin: 0 0 1.6rem;
+}
+
+.claimLine,
+.claimEm {
+  display: block;
+}
+
+.claimEm {
+  font-style: italic;
+}
+
+.lead {
+  max-width: 36rem;
+  margin: 0 0 1.15rem;
+  color: var(--ink);
+}
+
+.offer {
+  margin: 0 0 2.75rem;
+  color: var(--bronze);
+  font-size: 1.0625rem;
+}
+
+.zone {
+  display: block;
+  width: 100%;
+  padding: 1.6rem 0 1.35rem;
+  cursor: pointer;
+  border: 0;
+  border-top: 1px solid var(--stone);
+  border-bottom: 1px solid var(--stone);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.zone:focus-within {
+  outline: 2px solid var(--ink);
+  outline-offset: 6px;
+}
+
+.file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.zoneTitle {
+  margin: 0 0 0.35rem;
+  font-size: 1.0625rem;
+}
+
+.zoneHint {
+  margin: 0;
+  color: var(--stone);
+  font-size: 0.9375rem;
+}
+
+.error {
+  margin: 0.85rem 0 0;
+  color: var(--ink);
+  font-size: 0.9375rem;
+}
+
+.samples {
+  margin: 1.35rem 0 0;
+}
+
+.samplesLabel {
+  margin: 0 0 0.45rem;
+  color: var(--stone);
+  font-size: 0.8125rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.sampleList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 1.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sampleBtn,
+.textBtn,
+.download {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+.sampleBtn:hover,
+.textBtn:hover,
+.download:hover {
+  color: var(--stone);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem 1.5rem;
+  margin: 0 0 2.4rem;
+}
+
+.meta {
+  margin: 0 0 2.5rem;
+}
+
+.kicker {
+  margin: 0 0 0.4rem;
+  color: var(--stone);
+  font-size: 0.8125rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.project {
+  font-family: var(--font-serif), "Source Serif 4", Georgia, serif;
+  font-size: clamp(1.45rem, 3vw, 1.9rem);
+  font-weight: 400;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.85rem;
+}
+
+.facts {
+  margin: 0;
+}
+
+.facts div {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr);
+  gap: 0.35rem 1rem;
+  padding: 0.28rem 0;
+}
+
+.facts dt {
+  margin: 0;
+  color: var(--stone);
+  font-size: 0.875rem;
+}
+
+.facts dd {
+  margin: 0;
+}
+
+.verdict {
+  font-family: var(--font-serif), "Source Serif 4", Georgia, serif;
+  font-style: italic;
+  font-size: 1.2rem;
+}
+
+.section {
+  margin: 0 0 2.75rem;
+}
+
+.sectionTitle {
+  margin: 0 0 0.85rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tableWrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.table th {
+  padding: 0.45rem 0.9rem 0.45rem 0;
+  color: var(--stone);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-align: left;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--stone);
+}
+
+.table td {
+  padding: 0.7rem 0.9rem 0.7rem 0;
+  vertical-align: top;
+  border-bottom: 1px solid color-mix(in srgb, var(--stone) 35%, var(--paper));
+}
+
+.table th:last-child,
+.table td:last-child {
+  padding-right: 0;
+}
+
+.failList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.failItem {
+  padding: 1rem 0 1.15rem;
+  border-top: 1px solid color-mix(in srgb, var(--stone) 35%, var(--paper));
+}
+
+.failItem:last-child {
+  border-bottom: 1px solid color-mix(in srgb, var(--stone) 35%, var(--paper));
+}
+
+.failHead {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.35rem 1.25rem;
+  margin: 0 0 0.35rem;
+}
+
+.failCheck {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 500;
+}
+
+.failNote {
+  margin: 0;
+  color: var(--stone);
+}
+
+.adjust {
+  margin: 0.55rem 0 0;
+  max-width: 42rem;
+}
+
+.adjustLabel {
+  color: var(--stone);
+}
+
+.disclaimer {
+  margin: 0 0 1.75rem;
+  max-width: 36rem;
+  color: var(--ink);
+}
+
+.downloads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.5rem;
+  margin: 0;
+}
+
+.toast {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  max-width: min(24rem, calc(100% - 2.5rem));
+  padding: 0.85rem 1rem;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 0.9375rem;
+  line-height: 1.4;
+}
+
+@media (max-width: 640px) {
+  .facts div {
+    grid-template-columns: 1fr;
+    gap: 0.1rem;
+    padding: 0.5rem 0;
+  }
+
+  .toast {
+    right: 1rem;
+    left: 1rem;
+    bottom: 1rem;
+    max-width: none;
+  }
+}

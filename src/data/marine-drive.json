@@ -1,0 +1,80 @@
+{
+  "id": "marine-drive",
+  "slug": "marine-drive",
+  "label": "69 Marine Drive (H4 dwelling)",
+  "fileStem": "69-marine-drive-house-khan",
+  "project": "Proposed additions and alterations to existing dwelling",
+  "erf": "672 Bluff, Durban",
+  "address": "69 Marine Drive — House Khan",
+  "occupancy": "H4",
+  "occupancyNote": "H4 dwelling",
+  "verdict": "Close, not stamp-ready.",
+  "passed": [
+    {
+      "id": "site-area",
+      "check": "Site area",
+      "note": "3667 m²",
+      "status": "pass"
+    },
+    {
+      "id": "coverage",
+      "check": "Coverage",
+      "note": "Under limit",
+      "status": "pass"
+    },
+    {
+      "id": "parking",
+      "check": "Parking",
+      "note": "6 / 6",
+      "status": "pass"
+    },
+    {
+      "id": "stairs",
+      "check": "Stairs",
+      "note": "Part M OK",
+      "status": "pass"
+    },
+    {
+      "id": "soakpit",
+      "check": "Soakpit",
+      "note": "OK",
+      "status": "pass"
+    },
+    {
+      "id": "lighting",
+      "check": "Lighting",
+      "note": "Under 5 W/m²",
+      "status": "pass"
+    }
+  ],
+  "failed": [
+    {
+      "id": "xa-fenestration",
+      "check": "XA fenestration",
+      "note": "Sheet says “not required”. L/G 16.9% and Ground 17.1% exceed 15%. SANS 204 required.",
+      "status": "fail",
+      "adjustment": "Recalculate fenestration. L/G at 16.9% and Ground at 17.1% exceed 15%. Do not leave the XA sheet as “not required”; SANS 204 is required."
+    },
+    {
+      "id": "pool-part-d",
+      "check": "Pool enclosure",
+      "note": "Part D enclosure missing",
+      "status": "fail",
+      "adjustment": "Add Part D swimming pool enclosure details to the drawing set."
+    },
+    {
+      "id": "owner-signature",
+      "check": "Owner signature",
+      "note": "Blank",
+      "status": "fail",
+      "adjustment": "Obtain the owner signature on the application documents."
+    },
+    {
+      "id": "eng-packs",
+      "check": "Engineering packs",
+      "note": "To attach",
+      "status": "fail",
+      "adjustment": "Attach the outstanding engineering packs to the submission."
+    }
+  ]
+}

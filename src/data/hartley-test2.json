@@ -1,0 +1,88 @@
+{
+  "id": "hartley-test2",
+  "slug": "hartley-test2",
+  "label": "130 Hartley Road (G1 medical offices)",
+  "fileStem": "130-hartley-road-test2",
+  "project": "Proposed conversion to medical offices",
+  "erf": null,
+  "address": "130 Hartley Road, Sydenham",
+  "occupancy": "G1",
+  "occupancyNote": "G1 medical offices (TEST2)",
+  "verdict": "Not stamp-ready.",
+  "passed": [
+    {
+      "id": "coverage",
+      "check": "Coverage",
+      "note": "Under 50%",
+      "status": "pass"
+    },
+    {
+      "id": "parking",
+      "check": "Parking",
+      "note": "9 provided vs 7 required",
+      "status": "pass"
+    },
+    {
+      "id": "lighting",
+      "check": "Lighting",
+      "note": "W/m² under cap",
+      "status": "pass"
+    },
+    {
+      "id": "window-schedule",
+      "check": "Window schedule",
+      "note": "Present",
+      "status": "pass"
+    },
+    {
+      "id": "part-k",
+      "check": "Part K",
+      "note": "Boundary wall noted",
+      "status": "pass"
+    }
+  ],
+  "failed": [
+    {
+      "id": "address-inconsistency",
+      "check": "Address",
+      "note": "130 vs 132 Hartley Road",
+      "status": "fail",
+      "adjustment": "Resolve 130 vs 132 Hartley Road across titleblock, application, and drawings so the address is consistent."
+    },
+    {
+      "id": "xa-444",
+      "check": "XA 4.4.4 fenestration",
+      "note": "Fenestration % missing",
+      "status": "fail",
+      "adjustment": "Complete XA 4.4.4 with fenestration percentages. The field is missing."
+    },
+    {
+      "id": "part-r",
+      "check": "Part R stormwater",
+      "note": "Stormwater / soakpit missing",
+      "status": "fail",
+      "adjustment": "Add Part R stormwater / soakpit information to the set."
+    },
+    {
+      "id": "part-m",
+      "check": "Part M stairs",
+      "note": "Stair dims missing",
+      "status": "fail",
+      "adjustment": "Dimension stairs to Part M on the drawings."
+    },
+    {
+      "id": "signatures",
+      "check": "Signatures",
+      "note": "Blank",
+      "status": "fail",
+      "adjustment": "Obtain competent person and owner signatures."
+    },
+    {
+      "id": "titleblocks",
+      "check": "Titleblocks",
+      "note": "Wrong leftover titleblocks",
+      "status": "fail",
+      "adjustment": "Replace leftover titleblocks so they match this project (medical offices at 130 Hartley Road)."
+    }
+  ]
+}
