@@ -12,7 +12,7 @@ type PlancheckAppProps = {
 
 const DRAWING_NAME = /\.(dwg|dxf)$/i;
 const ENGINE_NOTE =
-  "Live engine wiring is next. Showing 130 Hartley Road (TEST2) as a stand-in.";
+  "A live check of this drawing is coming. For now, here is 130 Hartley Road so you can see the report.";
 
 export function PlancheckApp({ samples, uploadStandIn }: PlancheckAppProps) {
   const inputId = useId();
@@ -45,7 +45,7 @@ export function PlancheckApp({ samples, uploadStandIn }: PlancheckAppProps) {
     }
 
     if (!DRAWING_NAME.test(file.name)) {
-      setError("Use a .dwg or .dxf.");
+      setError("Please choose a .dwg or .dxf drawing.");
       return;
     }
 
@@ -89,9 +89,11 @@ export function PlancheckApp({ samples, uploadStandIn }: PlancheckAppProps) {
               accept=".dwg,.dxf,application/acad,image/vnd.dwg,image/vnd.dxf"
               onChange={(event) => onFile(event.target.files?.[0])}
             />
-            <p className={styles.zoneTitle}>Drop a .dwg or .dxf, or choose a file</p>
+            <p className={styles.zoneTitle}>
+              Choose a drawing file (.dwg or .dxf)
+            </p>
             <p className={styles.zoneHint}>
-              Client-side pick for this MVP. No CAD parser yet.
+              You will get a pass/fail checklist before you submit.
             </p>
           </label>
           {error ? (

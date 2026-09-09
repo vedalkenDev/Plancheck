@@ -3,36 +3,39 @@ import type { AuditSample } from "@/data/types";
 export const DISCLAIMER =
   "Not a stamp. Not municipal approval. Competent person and owner signatures still required.";
 
-export function auditToMarkdown(audit: AuditSample): string {
-  const meta = [
-    `# Plancheck — ${audit.project}`,
+export function auditToReport(audit: AuditSample): string {
+  const passed = audit.passed.map(
+    (row) => `${row.check} — ${row.note} (Pass)`,
+  );
+
+  const failed = audit.failed.flatMap((row) => [
+    row.check,
+    row.note,
+    `Adjust: ${row.adjustment}`,
     "",
-    `- Address: ${audit.address}`,
-    audit.erf ? `- Erf: ${audit.erf}` : null,
-    `- Occupancy: ${audit.occupancy} (${audit.occupancyNote})`,
-    `- Verdict: ${audit.verdict}`,
+  ]);
+
+  return [
+    "Plancheck",
+    audit.project,
+    "",
+    `Address: ${audit.address}`,
+    audit.erf ? `Erf: ${audit.erf}` : null,
+    `Occupancy: ${audit.occupancy} · ${audit.occupancyNote}`,
+    `Verdict: ${audit.verdict}`,
     "",
     DISCLAIMER,
     "",
-    "## PASSED",
+    "PASSED",
+    ...passed,
     "",
-    "| Check | Numbers / note | Status |",
-    "| --- | --- | --- |",
-    ...audit.passed.map((row) => `| ${row.check} | ${row.note} | Pass |`),
-    "",
-    "## FAILED",
-    "",
-    ...audit.failed.flatMap((row) => [
-      `### ${row.check}`,
-      "",
-      row.note,
-      "",
-      `Adjust: ${row.adjustment}`,
-      "",
-    ]),
-  ];
-
-  return meta.filter((line) => line !== null).join("\n");
+    "FAILED",
+    ...failed,
+  ]
+    .filter((line) => line !== null)
+    .join("\n")
+    .trimEnd()
+    .concat("\n");
 }
 
 export function annotatedDrawingPlaceholder(audit: AuditSample): string {
@@ -41,19 +44,17 @@ export function annotatedDrawingPlaceholder(audit: AuditSample): string {
     .join("\n");
 
   return [
-    "Plancheck annotated drawing (MVP placeholder)",
+    "Plancheck annotated drawing",
     DISCLAIMER,
     "",
     audit.project,
     audit.address,
     audit.erf ? `Erf: ${audit.erf}` : null,
-    `Occupancy: ${audit.occupancy} (${audit.occupancyNote})`,
+    `Occupancy: ${audit.occupancy} · ${audit.occupancyNote}`,
     `Verdict: ${audit.verdict}`,
     "",
     "FAILED",
     failed,
-    "",
-    "Live CAD annotation ships when Knight wires the audit engine.",
   ]
     .filter((line) => line !== null)
     .join("\n");

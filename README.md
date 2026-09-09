@@ -24,6 +24,6 @@ npm start
 
 1. Upload a `.dwg` / `.dxf`, or run a sample audit.
 2. Any uploaded drawing maps to the Hartley TEST2 sample and shows a note that live engine wiring is next.
-3. Result view: project meta, PASSED table, FAILED items with what to adjust, disclaimer, annotated DWG download, checklist Markdown download.
+3. Result view: project meta, PASSED table, FAILED items with what to adjust, disclaimer, annotated drawing download, checklist (.txt) download.
 
 Samples live in `src/data/` as JSON (Marine Drive H4 and Hartley TEST2 G1).

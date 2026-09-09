@@ -1,7 +1,7 @@
 import type { AuditSample } from "@/data/types";
 import {
   annotatedDrawingPlaceholder,
-  auditToMarkdown,
+  auditToReport,
   DISCLAIMER,
 } from "@/lib/checklist";
 import { downloadTextFile } from "@/lib/download";
@@ -14,11 +14,11 @@ type AuditResultProps = {
 };
 
 export function AuditResult({ audit, source, onReset }: AuditResultProps) {
-  function downloadMarkdown() {
+  function downloadChecklist() {
     downloadTextFile(
-      `${audit.fileStem}-checklist.md`,
-      auditToMarkdown(audit),
-      "text/markdown;charset=utf-8",
+      `${audit.fileStem}-checklist.txt`,
+      auditToReport(audit),
+      "text/plain;charset=utf-8",
     );
   }
 
@@ -35,7 +35,7 @@ export function AuditResult({ audit, source, onReset }: AuditResultProps) {
       <div className={styles.toolbar}>
         <p className={styles.kicker}>
           {source === "upload"
-            ? `Uploaded drawing · stand-in ${audit.label}`
+            ? `Uploaded drawing · showing ${audit.label} as an example`
             : `Sample audit · ${audit.label}`}
         </p>
         <button className={styles.textBtn} type="button" onClick={onReset}>
@@ -124,10 +124,10 @@ export function AuditResult({ audit, source, onReset }: AuditResultProps) {
 
       <div className={styles.downloads}>
         <button className={styles.download} type="button" onClick={downloadDrawing}>
-          Download annotated DWG
+          Download annotated drawing
         </button>
-        <button className={styles.download} type="button" onClick={downloadMarkdown}>
-          Download checklist Markdown
+        <button className={styles.download} type="button" onClick={downloadChecklist}>
+          Download checklist
         </button>
       </div>
     </div>
