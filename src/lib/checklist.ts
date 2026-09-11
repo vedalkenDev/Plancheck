@@ -5,11 +5,11 @@ export const DISCLAIMER =
 
 export function auditToReport(audit: AuditSample): string {
   const passed = audit.passed.map(
-    (row) => `${row.check} — ${row.note} (Pass)`,
+    (row) => `${row.code} — ${row.check} — ${row.note} (Pass)`,
   );
 
   const failed = audit.failed.flatMap((row) => [
-    row.check,
+    `${row.code} — ${row.check}`,
     row.note,
     `Adjust: ${row.adjustment}`,
     "",
@@ -36,26 +36,4 @@ export function auditToReport(audit: AuditSample): string {
     .join("\n")
     .trimEnd()
     .concat("\n");
-}
-
-export function annotatedDrawingPlaceholder(audit: AuditSample): string {
-  const failed = audit.failed
-    .map((row) => `- ${row.check}: ${row.adjustment}`)
-    .join("\n");
-
-  return [
-    "Plancheck annotated drawing",
-    DISCLAIMER,
-    "",
-    audit.project,
-    audit.address,
-    audit.erf ? `Erf: ${audit.erf}` : null,
-    `Occupancy: ${audit.occupancy} · ${audit.occupancyNote}`,
-    `Verdict: ${audit.verdict}`,
-    "",
-    "FAILED",
-    failed,
-  ]
-    .filter((line) => line !== null)
-    .join("\n");
 }

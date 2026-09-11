@@ -1,16 +1,25 @@
+export type CheckEvidence = {
+  quote: string;
+  layer?: string;
+};
+
 export type PassedCheck = {
   id: string;
+  code: string;
   check: string;
   note: string;
   status: "pass";
+  evidence?: CheckEvidence[];
 };
 
 export type FailedCheck = {
   id: string;
+  code: string;
   check: string;
   note: string;
   status: "fail";
   adjustment: string;
+  evidence?: CheckEvidence[];
 };
 
 export type AuditSample = {
@@ -26,4 +35,12 @@ export type AuditSample = {
   verdict: string;
   passed: PassedCheck[];
   failed: FailedCheck[];
+  warnings?: string[];
+  format?: "dxf" | "dwg" | "unknown";
+};
+
+export type SampleDrawing = {
+  id: string;
+  label: string;
+  href: string;
 };

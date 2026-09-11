@@ -1,10 +1,16 @@
-import hartleyJson from "./hartley-test2.json";
-import marineDriveJson from "./marine-drive.json";
-import type { AuditSample } from "./types";
+import type { SampleDrawing } from "./types";
 
-export type { AuditSample, FailedCheck, PassedCheck } from "./types";
+export type { AuditSample, FailedCheck, PassedCheck, SampleDrawing } from "./types";
 
-export const marineDrive = marineDriveJson as AuditSample;
-export const hartley = hartleyJson as AuditSample;
-
-export const sampleList: AuditSample[] = [marineDrive, hartley];
+export const sampleDrawings: SampleDrawing[] = [
+  {
+    id: "marine-drive",
+    label: "69 Marine Drive (H4 dwelling)",
+    href: "/samples/marine-drive.dxf",
+  },
+  {
+    id: "hartley-test2",
+    label: "130 Hartley Road (G1 medical offices)",
+    href: "/samples/hartley-test2.dxf",
+  },
+];
