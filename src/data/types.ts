@@ -5,20 +5,20 @@ export type CheckEvidence = {
 
 export type PassedCheck = {
   id: string;
-  code: string;
+  part: string;
   check: string;
-  note: string;
+  detail: string;
   status: "pass";
   evidence?: CheckEvidence[];
 };
 
 export type FailedCheck = {
   id: string;
-  code: string;
+  part: string;
   check: string;
-  note: string;
+  detail: string;
   status: "fail";
-  adjustment: string;
+  adjust: string;
   evidence?: CheckEvidence[];
 };
 

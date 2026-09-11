@@ -1,4 +1,4 @@
-/** SANS 10400-A Table 1 occupancy classes (Regulation A20). */
+/** SANS 10400-A Table 1 occupancy classes. A20 is the regulation that requires a class — not a class itself. */
 export const OCCUPANCY_CLASSES: Record<string, string> = {
   A1: "entertainment and public assembly",
   A2: "theatrical and indoor sport",
@@ -25,7 +25,7 @@ export const OCCUPANCY_CLASSES: Record<string, string> = {
   H1: "hotel",
   H2: "dormitory",
   H3: "domestic residence",
-  H4: "dwelling house",
+  H4: "dwelling",
   H5: "hospitality",
   J1: "high risk storage",
   J2: "moderate risk storage",
@@ -33,11 +33,13 @@ export const OCCUPANCY_CLASSES: Record<string, string> = {
   J4: "parking garage",
 };
 
-const OCCUPANCY_CODE = /\b([A-H][1-5]|J[1-4])\b/;
+const LABELED = /occupancy\s*[:#]?\s*([A-HJ][1-5])(?!\d)/i;
+const BARE = /\b([A-HJ][1-5])(?!\d)\b/;
 
 export function occupancyFromText(blob: string) {
-  const match = blob.match(OCCUPANCY_CODE);
-  const code = match?.[1] ?? null;
+  const labeled = blob.match(LABELED);
+  const bare = blob.match(BARE);
+  const code = labeled?.[1]?.toUpperCase() ?? bare?.[1]?.toUpperCase() ?? null;
   if (!code) {
     return { code: "—", note: "not found" };
   }
@@ -47,12 +49,4 @@ export function occupancyFromText(blob: string) {
   }
 
   return { code, note: OCCUPANCY_CLASSES[code] ?? "from the drawing" };
-}
-
-export function needsAccessPartS(code: string) {
-  return /^(A|E|F|G|H1|H2|H3)/.test(code);
-}
-
-export function needsFirePartT(code: string) {
-  return /^(A|B|C|E|F|G|H1|J)/.test(code);
 }

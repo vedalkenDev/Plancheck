@@ -33,16 +33,16 @@ export function auditFromDrawing(
   const warnings: string[] = [];
   if (extract.format === "dwg" && extract.geometry.length === 0) {
     warnings.push(
-      "Binary DWG — Plancheck reads title and note strings, not geometry. Save a DXF for a drawing preview.",
+      "This drawing is binary. Plancheck reads titles and notes. Export from CAD for a fuller preview and annotated drawing.",
     );
   }
 
   const verdict =
     failed.length === 0
-      ? "Checks we could read look complete. Not stamp-ready by itself."
-      : failed.length <= 2
-        ? "Close, not stamp-ready."
-        : "Not stamp-ready.";
+      ? "Checks we could read look complete. Still a pre-submission audit, not approval."
+      : failed.length <= 4
+        ? "Close, not council-ready."
+        : "Not council-ready.";
 
   return {
     id: `upload-${fileStem}`,

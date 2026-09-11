@@ -219,6 +219,42 @@ Fenestration L/G 16.9% Ground 17.1%
   0
 TEXT
   8
+XA
+ 10
+9500.0
+ 20
+400.0
+ 40
+180.0
+  1
+L/G nett floor 371 m2
+  0
+TEXT
+  8
+XA
+ 10
+9500.0
+ 20
+100.0
+ 40
+180.0
+  1
+Ground nett floor 367 m2
+  0
+TEXT
+  8
+WIN_SCHED
+ 10
+400.0
+ 20
+400.0
+ 40
+180.0
+  1
+Window schedule W1-W19 unit sizes drawn
+  0
+TEXT
+  8
 POOL
  10
 20200.0

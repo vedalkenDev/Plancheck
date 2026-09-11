@@ -19,9 +19,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { AuditSample, SampleDrawing } from "@/data/types";
-import { auditFromDrawing, extractDrawing } from "@/lib/cad";
+import { auditFromDrawing, buildAnnotatedDrawing, extractDrawing } from "@/lib/cad";
 import type { DrawingExtract } from "@/lib/cad/extract";
-import { DISCLAIMER } from "@/lib/checklist";
+import { DISCLAIMER, auditToReport, downloadBlob } from "@/lib/checklist";
 
 type PlancheckAppProps = {
   samples: SampleDrawing[];
@@ -36,6 +36,7 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [audit, setAudit] = useState<AuditSample | null>(null);
   const [extract, setExtract] = useState<DrawingExtract | null>(null);
+  const [sourceText, setSourceText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
   const [done, setDone] = useState<Record<string, boolean>>({});
@@ -47,6 +48,7 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
   function reset() {
     setAudit(null);
     setExtract(null);
+    setSourceText(null);
     setError(null);
     setReading(false);
     resetChecks();
@@ -57,11 +59,11 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
 
   async function inspect(file: File) {
     if (!DRAWING_NAME.test(file.name)) {
-      setError("Please choose a .dwg or .dxf drawing.");
+      setError("Please choose a drawing file.");
       return;
     }
     if (file.size > MAX_BYTES) {
-      setError("That drawing is too large to read here. Save a DXF and try again.");
+      setError("That drawing is too large to read here. Try a smaller file.");
       return;
     }
 
@@ -80,12 +82,12 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
       const drawing = extractDrawing(file.name, bytes);
       const result = auditFromDrawing(file.name, drawing);
       setExtract(drawing);
+      setSourceText(new TextDecoder("utf-8", { fatal: false }).decode(bytes));
       setAudit(result);
     } catch {
-      setError(
-        "The drawing could not be read. Save a DXF from your CAD software and try again.",
-      );
+      setError("The drawing could not be read. Export it from CAD and try again.");
       setExtract(null);
+      setSourceText(null);
     } finally {
       setReading(false);
     }
@@ -118,6 +120,7 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
       const result = auditFromDrawing(sample.label, drawing);
       result.label = sample.label;
       setExtract(drawing);
+      setSourceText(new TextDecoder("utf-8", { fatal: false }).decode(bytes));
       setAudit(result);
     } catch {
       setError("The sample drawing could not be loaded.");
@@ -189,8 +192,8 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
                 <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
                   <FileUp className="size-8 text-muted-foreground" />
                   <p className="max-w-xs text-sm leading-relaxed">
-                    Drag DWG file here, or click here to inspect your drawing file
-                    for council plan submission.
+                    Drag a drawing file here, or click here to inspect your
+                    drawing for council plan submission.
                   </p>
                 </div>
               )}
@@ -226,7 +229,13 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
               {reading ? (
                 <InspectingState />
               ) : audit ? (
-                <Analysis audit={audit} done={done} setDone={setDone} />
+                <Analysis
+                  audit={audit}
+                  extract={extract}
+                  sourceText={sourceText}
+                  done={done}
+                  setDone={setDone}
+                />
               ) : (
                 <EmptyState />
               )}
@@ -266,10 +275,14 @@ function InspectingState() {
 
 function Analysis({
   audit,
+  extract,
+  sourceText,
   done,
   setDone,
 }: {
   audit: AuditSample;
+  extract: DrawingExtract | null;
+  sourceText: string | null;
   done: Record<string, boolean>;
   setDone: (value: Record<string, boolean>) => void;
 }) {
@@ -277,6 +290,25 @@ function Analysis({
     () => audit.failed.filter((row) => !done[row.id]).length,
     [audit.failed, done],
   );
+
+  function downloadChecklist() {
+    downloadBlob(
+      `${audit.fileStem}-checklist.txt`,
+      auditToReport(audit),
+      "text/plain;charset=utf-8",
+    );
+  }
+
+  function downloadDrawing() {
+    if (!extract) {
+      return;
+    }
+    downloadBlob(
+      `${audit.fileStem}-annotated.dxf`,
+      buildAnnotatedDrawing(audit, extract, sourceText ?? undefined),
+      "application/dxf",
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -317,22 +349,22 @@ function Analysis({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>SANS / NBR</TableHead>
+                    <TableHead>Part</TableHead>
                     <TableHead>Check</TableHead>
-                    <TableHead>Note</TableHead>
+                    <TableHead>Detail</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {audit.passed.map((row) => (
                     <TableRow key={row.id}>
                       <TableCell className="font-mono text-xs whitespace-normal">
-                        {row.code}
+                        {row.part}
                       </TableCell>
                       <TableCell className="whitespace-normal">
                         {row.check}
                       </TableCell>
                       <TableCell className="whitespace-normal text-muted-foreground">
-                        {row.note}
+                        {row.detail}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -353,22 +385,22 @@ function Analysis({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>SANS / NBR</TableHead>
+                    <TableHead>Part</TableHead>
                     <TableHead>Check</TableHead>
-                    <TableHead>Missed</TableHead>
+                    <TableHead>Detail</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {audit.failed.map((row) => (
                     <TableRow key={row.id}>
                       <TableCell className="font-mono text-xs whitespace-normal">
-                        {row.code}
+                        {row.part}
                       </TableCell>
                       <TableCell className="whitespace-normal">
                         {row.check}
                       </TableCell>
                       <TableCell className="whitespace-normal text-muted-foreground">
-                        {row.note}
+                        {row.detail}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -409,9 +441,9 @@ function Analysis({
                   />
                   <div className="space-y-1">
                     <p className="text-sm font-medium">
-                      {row.code} · {row.check}
+                      {row.part} · {row.check}
                     </p>
-                    <p className="text-sm text-muted-foreground">{row.adjustment}</p>
+                    <p className="text-sm text-muted-foreground">{row.adjust}</p>
                   </div>
                 </li>
               ))}
@@ -424,8 +456,20 @@ function Analysis({
         </CardContent>
       </Card>
 
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" variant="outline" onClick={downloadDrawing} disabled={!extract}>
+          Download annotated drawing
+        </Button>
+        <Button type="button" variant="outline" onClick={downloadChecklist}>
+          Download checklist
+        </Button>
+      </div>
+
       <Separator />
       <p className="text-xs text-muted-foreground">{DISCLAIMER}</p>
+      <p className="text-xs text-muted-foreground">
+        Finding first. Fixing is the job. Luqmaan Sayed
+      </p>
     </div>
   );
 }
