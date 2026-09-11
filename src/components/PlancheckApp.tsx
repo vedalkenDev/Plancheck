@@ -122,17 +122,20 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
         <p className="mt-4 text-stone">Fixing is the job.</p>
 
         <div className="mt-12">
-          <label htmlFor={inputId} className="block text-sm">
-            Choose a drawing file (.dwg or .dxf)
-          </label>
           <input
             ref={inputRef}
             id={inputId}
-            className="mt-3 block w-full max-w-md text-sm file:mr-4 file:border-0 file:bg-transparent file:px-0 file:py-0 file:text-sm file:text-ink"
+            className="sr-only"
             type="file"
             accept=".dwg,.dxf,application/acad,image/vnd.dwg,image/vnd.dxf"
             onChange={(event) => void onFile(event.target.files?.[0])}
           />
+          <label
+            htmlFor={inputId}
+            className="inline-block cursor-pointer text-sm underline-offset-4 hover:underline"
+          >
+            Choose a drawing file (.dwg or .dxf)
+          </label>
         </div>
 
         <p className="mt-8 text-sm text-stone">
