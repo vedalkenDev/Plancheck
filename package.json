@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start --port 43173 --hostname 127.0.0.1",
     "lint": "eslint",
-    "test": "tsx --test src/lib/cad/audit-from-drawing.test.ts"
+    "test": "tsx --test src/lib/cad/audit-from-drawing.test.ts src/lib/checklist.test.ts"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",

@@ -9,7 +9,7 @@ This is a **pre-submission audit**. It is not a stamp, not municipal approval, a
 - **Users:** non-technical principals and architects.
 - **Offer:** finding first; fixing is the job. Luqmaan Sayed on the work.
 - **Path:** [vedalken.dev/plancheck](https://vedalken.dev/plancheck)
-- **Repo:** [github.com/vedalkenDev/Plancheck](https://github.com/vedalkenDev/Plancheck) is the live line. The early Origin paper UI was a failed UX trial — do not bring it back.
+- **Repo:** [github.com/vedalkenDev/Plancheck](https://github.com/vedalkenDev/Plancheck) is the live line. The Origin Plancheck UI was a failed trial — do not copy it. Chrome follows [`docs/XUN-VISUAL-LOCK.md`](XUN-VISUAL-LOCK.md).
 - **Flow:** upload a drawing (`.dwg` / `.dxf`) → pass/fail checklist + annotated drawing.
 - **Downloads:** checklist as `.txt` (printable). Never ship Markdown as the user-facing checklist. Annotated output is a real drawing file with notes/schedules — never a text file renamed `.dwg`.
 - **Copy:** say “drawing” and “checklist”. Do not say DXF, MTEXT, or layer names in the UI.

@@ -1,41 +1,63 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter, Newsreader } from "next/font/google";
 import { Providers } from "@/components/providers";
 import { cn } from "@/lib/utils";
 import "./globals.css";
 
-const geist = Geist({
+const inter = Inter({
   subsets: ["latin"],
   display: "swap",
-  variable: "--font-sans",
+  variable: "--font-inter",
 });
 
-const geistMono = Geist_Mono({
+const newsreader = Newsreader({
   subsets: ["latin"],
   display: "swap",
-  variable: "--font-mono",
+  variable: "--font-newsreader",
 });
 
 export const metadata: Metadata = {
-  title: "Plancheck — Vedalken Dev",
+  title: "Plancheck — Vedalken",
   description:
-    "Upload a .dwg. Get a pass/fail checklist against SANS 10400 before you submit. Finding first. Fixing is the job.",
+    "Upload a drawing. Get SANS pass or fail, and what to adjust. Finding first. Fixing is the job.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      suppressHydrationWarning
-      className={cn("font-sans antialiased", geist.variable, geistMono.variable)}
+      className={cn(
+        "bg-paper font-sans antialiased",
+        inter.variable,
+        newsreader.variable,
+      )}
     >
-      <body>
-        <a className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2" href="#main">
+      <body className="flex min-h-svh flex-col bg-paper text-ink">
+        <a
+          className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:bg-paper focus:px-3 focus:py-2 focus:text-ink"
+          href="#main"
+        >
           Skip to content
         </a>
+        <header className="flex items-baseline justify-between px-6 py-8 md:px-12">
+          <a href="https://vedalken.dev" className="text-sm tracking-wide">
+            Vedalken
+          </a>
+          <p className="text-sm text-stone">Plancheck</p>
+        </header>
         <Providers>
-          <div id="main">{children}</div>
+          <div id="main" className="flex-1">
+            {children}
+          </div>
         </Providers>
+        <footer className="px-6 py-10 md:px-12">
+          <p className="text-sm text-stone">
+            Luqmaan Sayed ·{" "}
+            <a href="https://vedalken.dev" className="text-ink">
+              vedalken.dev
+            </a>
+          </p>
+        </footer>
       </body>
     </html>
   );
