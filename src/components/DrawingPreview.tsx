@@ -14,8 +14,8 @@ export function DrawingPreview({ extract, label }: DrawingPreviewProps) {
 
   if (!drawable.length || !bounds) {
     return (
-      <div className="flex min-h-64 flex-col justify-between font-sans text-sm text-stone">
-        <p className="text-ink">{label}</p>
+      <div className="flex h-full min-h-64 flex-col justify-between rounded-lg bg-muted/30 p-4 font-mono text-xs text-muted-foreground">
+        <p className="text-foreground">{label}</p>
         <ul className="mt-4 space-y-1 overflow-auto">
           {extract.strings.slice(0, 18).map((line) => (
             <li key={line}>{line}</li>
@@ -23,7 +23,7 @@ export function DrawingPreview({ extract, label }: DrawingPreviewProps) {
         </ul>
         {extract.format === "dwg" ? (
           <p className="mt-4">
-            Geometry is not in this drawing. Export from CAD to preview the plan.
+        Geometry is not in this drawing. Export from CAD to preview the plan.
           </p>
         ) : null}
       </div>
@@ -41,7 +41,7 @@ export function DrawingPreview({ extract, label }: DrawingPreviewProps) {
   return (
     <svg
       viewBox={`${minX} ${minY} ${width} ${height}`}
-      className="h-full w-full min-h-64 text-ink"
+      className="h-full w-full min-h-64 text-foreground"
       role="img"
       aria-label={`Drawing preview of ${label}`}
     >
@@ -50,7 +50,7 @@ export function DrawingPreview({ extract, label }: DrawingPreviewProps) {
         y={minY}
         width={width}
         height={height}
-        fill="#F3EFE6"
+        className="fill-muted/40"
       />
       {extract.geometry.map((entity, index) => {
         if (entity.kind === "line") {
@@ -115,7 +115,7 @@ export function DrawingPreview({ extract, label }: DrawingPreviewProps) {
             y={fy(entity.p.y)}
             fontSize={Math.max(entity.height, stroke * 8)}
             fill="currentColor"
-            opacity={0.8}
+            className="opacity-80"
           >
             {entity.value.slice(0, 42)}
           </text>

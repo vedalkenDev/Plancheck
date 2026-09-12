@@ -1,7 +1,7 @@
 import type { AuditSample } from "@/data/types";
 
 export const DISCLAIMER =
-  "Not a stamp. Not municipal approval. Competent person and owner signatures still required.";
+  "Pre-submission audit. Not municipal approval. Not a competent-person substitute. Signatures still required.";
 
 export function auditToReport(audit: AuditSample): string {
   const passed = audit.passed.map(
