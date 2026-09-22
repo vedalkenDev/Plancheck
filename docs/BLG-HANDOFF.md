@@ -9,7 +9,9 @@ This is a **pre-submission audit**. It is not a stamp, not municipal approval, a
 - **Users:** non-technical principals and architects.
 - **Offer:** finding first; fixing is the job. Luqmaan Sayed on the work.
 - **Path:** [vedalken.dev/plancheck](https://vedalken.dev/plancheck)
-- **Repo:** [github.com/vedalkenDev/Plancheck](https://github.com/vedalkenDev/Plancheck) is the live line. The Origin Plancheck UI was a failed trial — do not copy it. Chrome follows [`docs/XUN-VISUAL-LOCK.md`](XUN-VISUAL-LOCK.md).
+- **Repo:** [github.com/vedalkenDev/Plancheck](https://github.com/vedalkenDev/Plancheck) is the live line. The Origin paper UI was a failed trial — do not copy it.
+- **UI (Luqmaan):** Dark shadcn dashboard. Header: Plancheck left, Vedalken Dev right, theme toggle. Layout: 1/3 drawing / 2/3 analysis (Passed, Not approved, What to change). This is the direction.
+- **Xun:** Paper lock is withdrawn. Take notes. Do not restyle Plancheck back to paper / Newsreader / bronze offer line. Engine/SANS is not yours to change.
 - **Flow:** upload a drawing (`.dwg` / `.dxf`) → pass/fail checklist + annotated drawing.
 - **Downloads:** checklist as `.txt` (printable). Never ship Markdown as the user-facing checklist. Annotated output is a real drawing file with notes/schedules — never a text file renamed `.dwg`.
 - **Copy:** say “drawing” and “checklist”. Do not say DXF, MTEXT, or layer names in the UI.
