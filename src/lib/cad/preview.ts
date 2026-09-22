@@ -8,38 +8,125 @@ type Bounds = {
 };
 
 export function geometryBounds(geometry: GeomEntity[]): Bounds | null {
+  const linePoints = geometry.flatMap(linePointsOf);
+  const framed = boundsOf(keepPlan(linePoints));
+  const curves = geometry.flatMap((entity) => curvePoints(entity, framed));
+  const points = framed ? [...linePointsInside(linePoints, framed), ...curves] : curves;
+  return boundsOf(points.length ? points : linePoints);
+}
+
+function linePointsOf(entity: GeomEntity): Point[] {
+  if (entity.kind === "line") {
+    return [entity.a, entity.b];
+  }
+  if (entity.kind === "polyline") {
+    return entity.points;
+  }
+  return [];
+}
+
+function curvePoints(entity: GeomEntity, frame: Bounds | null): Point[] {
+  if (entity.kind !== "circle" && entity.kind !== "arc") {
+    return [];
+  }
+  if (frame) {
+    const span = Math.max(frame.maxX - frame.minX, frame.maxY - frame.minY, 1);
+    const inside =
+      entity.c.x >= frame.minX - span &&
+      entity.c.x <= frame.maxX + span &&
+      entity.c.y >= frame.minY - span &&
+      entity.c.y <= frame.maxY + span;
+    if (!inside || entity.r > span * 2) {
+      return [];
+    }
+  }
+  return [
+    { x: entity.c.x - entity.r, y: entity.c.y - entity.r },
+    { x: entity.c.x + entity.r, y: entity.c.y + entity.r },
+  ];
+}
+
+function linePointsInside(points: Point[], frame: Bounds) {
+  const span = Math.max(frame.maxX - frame.minX, frame.maxY - frame.minY, 1);
+  return points.filter(
+    (point) =>
+      point.x >= frame.minX - span * 0.05 &&
+      point.x <= frame.maxX + span * 0.05 &&
+      point.y >= frame.minY - span * 0.05 &&
+      point.y <= frame.maxY + span * 0.05,
+  );
+}
+
+function keepPlan(points: Point[]) {
+  let current = points;
+  for (let pass = 0; pass < 4; pass += 1) {
+    const next = dropDistantSide(current);
+    if (next.length === current.length) {
+      return current;
+    }
+    current = next;
+  }
+  return current;
+}
+
+function dropDistantSide(points: Point[]) {
+  if (points.length < 4) {
+    return points;
+  }
+  const box = boundsOf(points);
+  if (!box) {
+    return points;
+  }
+  const xSpan = box.maxX - box.minX;
+  const ySpan = box.maxY - box.minY;
+  const axis: "x" | "y" = xSpan >= ySpan ? "x" : "y";
+  const span = Math.max(xSpan, ySpan);
+  const sorted = [...points].sort((a, b) => a[axis] - b[axis]);
+  let gap = 0;
+  let at = -1;
+  for (let i = 1; i < sorted.length; i += 1) {
+    const size = sorted[i][axis] - sorted[i - 1][axis];
+    if (size > gap) {
+      gap = size;
+      at = i;
+    }
+  }
+  if (at < 0 || gap < span * 0.35) {
+    return points;
+  }
+  const left = sorted.slice(0, at);
+  const right = sorted.slice(at);
+  if (left.length * 2 >= points.length && right.length * 2 >= points.length) {
+    return points;
+  }
+  const minority = left.length <= right.length ? left : right;
+  const majority = left.length <= right.length ? right : left;
+  if (minority.length > Math.max(2, majority.length * 0.15)) {
+    return points;
+  }
+  return majority;
+}
+
+function boundsOf(points: Point[]): Bounds | null {
+  if (!points.length) {
+    return null;
+  }
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
-  let hit = false;
-
-  function add(point: Point) {
-    hit = true;
+  for (const point of points) {
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+      continue;
+    }
     minX = Math.min(minX, point.x);
     minY = Math.min(minY, point.y);
     maxX = Math.max(maxX, point.x);
     maxY = Math.max(maxY, point.y);
   }
-
-  for (const entity of geometry) {
-    if (entity.kind === "line") {
-      add(entity.a);
-      add(entity.b);
-    } else if (entity.kind === "polyline") {
-      entity.points.forEach(add);
-    } else if (entity.kind === "circle" || entity.kind === "arc") {
-      add({ x: entity.c.x - entity.r, y: entity.c.y - entity.r });
-      add({ x: entity.c.x + entity.r, y: entity.c.y + entity.r });
-    } else if (entity.kind === "text") {
-      add(entity.p);
-    }
-  }
-
-  if (!hit || !Number.isFinite(minX)) {
+  if (!Number.isFinite(minX)) {
     return null;
   }
-
   return { minX, minY, maxX, maxY };
 }
 
