@@ -4,8 +4,10 @@ import { describe, it } from "node:test";
 import { dwgToDxf } from "./dwg-to-dxf";
 import { extractDrawing } from "./extract";
 
-function arrayBuffer(bytes: Buffer) {
-  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+function arrayBuffer(bytes: Buffer): ArrayBuffer {
+  const copy = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(copy).set(bytes);
+  return copy;
 }
 
 describe("dwg conversion", () => {
