@@ -6,7 +6,7 @@ The live line is [github.com/vedalkenDev/Plancheck](https://github.com/vedalkenD
 
 Uploads are read in the browser. Not a stamp. Not municipal approval. Competent person and owner signatures still required.
 
-Product, engine pipeline, SANS drawing rules, and sample ground truth: [`docs/BLG-HANDOFF.md`](docs/BLG-HANDOFF.md). Visual lock: [`docs/XUN-VISUAL-LOCK.md`](docs/XUN-VISUAL-LOCK.md).
+Product, engine pipeline, SANS drawing rules, and sample ground truth: [`docs/BLG-HANDOFF.md`](docs/BLG-HANDOFF.md). Dark dashboard is the UI.
 
 ## Run locally
 

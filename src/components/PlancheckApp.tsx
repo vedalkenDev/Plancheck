@@ -1,7 +1,23 @@
 "use client";
 
-import { useId, useRef, useState, type FormEvent } from "react";
+import { FileUp, Loader2 } from "lucide-react";
+import { useId, useMemo, useRef, useState, type FormEvent } from "react";
 import { DrawingPreview } from "@/components/DrawingPreview";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import type { AuditSample, SampleDrawing } from "@/data/types";
 import { auditFromDrawing, buildAnnotatedDrawing, extractDrawing } from "@/lib/cad";
 import { addVisibleText } from "@/lib/cad/annotate";
@@ -49,6 +65,11 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
   const [sourceText, setSourceText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
+  const [done, setDone] = useState<Record<string, boolean>>({});
+
+  function resetChecks() {
+    setDone({});
+  }
 
   function reset() {
     setAudit(null);
@@ -56,6 +77,7 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
     setSourceText(null);
     setError(null);
     setReading(false);
+    resetChecks();
     if (inputRef.current) {
       inputRef.current.value = "";
     }
@@ -74,6 +96,7 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
     setError(null);
     setReading(true);
     setAudit(null);
+    resetChecks();
 
     try {
       const [bytes] = await Promise.all([
@@ -82,10 +105,10 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
           setTimeout(resolve, MIN_SPIN_MS);
         }),
       ]);
-      const { drawing, sourceText } = await readDrawing(file.name, bytes);
+      const { drawing, sourceText: nextText } = await readDrawing(file.name, bytes);
       const result = auditFromDrawing(file.name, drawing);
       setExtract(drawing);
-      setSourceText(sourceText);
+      setSourceText(nextText);
       setAudit(result);
     } catch {
       setError("The drawing could not be read. Export it from CAD and try again.");
@@ -107,6 +130,7 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
     setError(null);
     setReading(true);
     setAudit(null);
+    resetChecks();
     try {
       const [response] = await Promise.all([
         fetch(sample.href),
@@ -119,11 +143,11 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
       }
       const bytes = await response.arrayBuffer();
       const filename = sample.href.split("/").pop() ?? `${sample.id}.dxf`;
-      const { drawing, sourceText } = await readDrawing(filename, bytes);
+      const { drawing, sourceText: nextText } = await readDrawing(filename, bytes);
       const result = auditFromDrawing(sample.label, drawing);
       result.label = sample.label;
       setExtract(drawing);
-      setSourceText(sourceText);
+      setSourceText(nextText);
       setAudit(result);
     } catch {
       setError("The sample drawing could not be loaded.");
@@ -133,22 +157,24 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-6 pb-16 md:px-12">
-      <section
-        className="max-w-3xl"
-        onDragOver={(event) => event.preventDefault()}
-        onDrop={(event) => {
-          event.preventDefault();
-          void onFile(event.dataTransfer.files[0]);
-        }}
-      >
-        <h1 className="font-serif text-4xl leading-tight tracking-tight md:text-5xl">
-          Upload a drawing. See what fails SANS 10400, and what to adjust.
+    <div className="flex min-h-svh flex-col bg-background">
+      <header className="flex h-16 shrink-0 items-center justify-between gap-4 border-b px-4 md:px-6">
+        <h1 className="font-heading text-xl font-semibold tracking-tight md:text-2xl">
+          Plancheck
         </h1>
-        <p className="mt-6 font-serif text-xl text-bronze">The finding is free.</p>
-        <p className="mt-4 text-stone">Fixing is the job.</p>
+        <div className="flex items-center gap-3">
+          <ThemeToggle />
+          <a
+            href="https://vedalken.dev"
+            className="text-sm font-medium text-muted-foreground hover:text-foreground"
+          >
+            Vedalken Dev
+          </a>
+        </div>
+      </header>
 
-        <div className="mt-12">
+      <div className="grid min-h-0 flex-1 lg:h-[calc(100svh-4rem)] lg:grid-cols-3">
+        <section className="flex min-h-[28rem] flex-col border-b p-4 lg:border-r lg:border-b-0 lg:p-6">
           <input
             ref={inputRef}
             id={inputId}
@@ -157,84 +183,186 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
             accept=".dwg,.dxf,application/acad,image/vnd.dwg,image/vnd.dxf"
             onChange={(event) => void onFile(event.target.files?.[0])}
           />
-          <label
-            htmlFor={inputId}
-            className="inline-block cursor-pointer text-sm underline-offset-4 hover:underline"
-          >
-            Choose a drawing file (.dwg or .dxf)
-          </label>
-          <p className="mt-3 text-sm text-stone">
-            A DWG opens on the sheet. Add a note and it shows on the drawing.
-          </p>
-        </div>
+          {extract && !reading ? (
+            <DrawingPane
+              extract={extract}
+              sourceText={sourceText}
+              label={audit?.label ?? "Drawing"}
+              onReplace={reset}
+              onChange={(next) => {
+                setExtract(next.extract);
+                setSourceText(next.sourceText);
+              }}
+            />
+          ) : (
+            <label
+              htmlFor={inputId}
+              className="flex min-h-0 flex-1 cursor-pointer flex-col rounded-xl border-2 border-dashed border-border bg-card p-4 ring-foreground/10 transition-colors hover:bg-muted/40 has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => {
+                event.preventDefault();
+                void onFile(event.dataTransfer.files[0]);
+              }}
+            >
+              {reading ? (
+                <div className="flex flex-1 flex-col items-center justify-center gap-3 text-muted-foreground">
+                  <Loader2 className="size-8 animate-spin" />
+                  <p className="text-sm">Inspecting drawing…</p>
+                </div>
+              ) : (
+                <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
+                  <FileUp className="size-8 text-muted-foreground" />
+                  <p className="max-w-xs text-sm leading-relaxed">
+                    Drag a drawing file here, or click here to inspect your
+                    drawing for council plan submission.
+                  </p>
+                </div>
+              )}
+            </label>
+          )}
+          {error ? (
+            <p className="mt-3 text-sm text-destructive" role="alert">
+              {error}
+            </p>
+          ) : null}
+          <div className="mt-4 space-y-2">
+            <p className="text-xs tracking-wide text-muted-foreground uppercase">
+              Sample drawings
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {samples.map((sample) => (
+                <Button
+                  key={sample.id}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void loadSample(sample)}
+                >
+                  {sample.label}
+                </Button>
+              ))}
+            </div>
+          </div>
+        </section>
 
-        <p className="mt-8 text-sm text-stone">
-          Samples:{" "}
-          {samples.map((sample, index) => (
-            <span key={sample.id}>
-              {index > 0 ? " · " : null}
-              <button
-                type="button"
-                className="text-ink underline-offset-4 hover:underline"
-                onClick={() => void loadSample(sample)}
-              >
-                {sample.label}
-              </button>
-            </span>
-          ))}
-        </p>
-
-        {error ? (
-          <p className="mt-6 text-sm" role="alert">
-            {error}
-          </p>
-        ) : null}
-
-        <p className="mt-10 max-w-xl text-sm text-stone">{DISCLAIMER}</p>
-      </section>
-
-      <section className="mt-16" aria-live="polite">
-        {reading ? (
-          <p className="text-sm text-stone">Reading the drawing…</p>
-        ) : audit ? (
-          <Result
-            audit={audit}
-            extract={extract}
-            sourceText={sourceText}
-            onReplace={reset}
-          />
-        ) : null}
-      </section>
+        <section className="min-h-0 overflow-auto lg:col-span-2">
+          <div className="p-4 md:p-6">
+            {reading ? (
+              <InspectingState />
+            ) : audit ? (
+              <Analysis
+                audit={audit}
+                extract={extract}
+                sourceText={sourceText}
+                done={done}
+                setDone={setDone}
+              />
+            ) : (
+              <EmptyState />
+            )}
+          </div>
+        </section>
+      </div>
     </div>
   );
 }
 
-function Result({
-  audit,
+function DrawingPane({
   extract,
   sourceText,
+  label,
   onReplace,
+  onChange,
 }: {
-  audit: AuditSample;
-  extract: DrawingExtract | null;
+  extract: DrawingExtract;
   sourceText: string | null;
+  label: string;
   onReplace: () => void;
+  onChange: (next: { extract: DrawingExtract; sourceText: string | null }) => void;
 }) {
   const noteId = useId();
-  const [drawing, setDrawing] = useState(extract);
-  const [dxf, setDxf] = useState(sourceText);
   const [draft, setDraft] = useState("");
 
   function addNote(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!drawing) {
-      return;
-    }
-    const next = addVisibleText(drawing, dxf, draft);
-    setDrawing(next.extract);
-    setDxf(next.sourceText);
+    const next = addVisibleText(extract, sourceText, draft);
+    onChange(next);
     setDraft("");
   }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-3 rounded-xl border-2 border-border bg-card p-4">
+      <div className="flex items-center justify-between gap-2">
+        <p className="truncate text-sm font-medium">{label}</p>
+        <Button type="button" variant="ghost" size="sm" onClick={onReplace}>
+          Replace
+        </Button>
+      </div>
+      <form className="flex flex-wrap items-end gap-2" onSubmit={addNote}>
+        <label htmlFor={noteId} className="min-w-0 flex-1 text-xs text-muted-foreground">
+          Add text
+          <input
+            id={noteId}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            className="mt-1 block w-full border-b border-border bg-transparent py-1 text-sm text-foreground"
+          />
+        </label>
+        <Button type="submit" variant="outline" size="sm">
+          Show on drawing
+        </Button>
+      </form>
+      <div className="min-h-0 flex-1 overflow-hidden rounded-lg border">
+        <DrawingPreview extract={extract} label={label} />
+      </div>
+    </div>
+  );
+}
+
+function EmptyState() {
+  return (
+    <div className="flex min-h-[24rem] flex-col items-center justify-center text-center text-muted-foreground">
+      <p className="max-w-md text-sm">
+        Upload a drawing to inspect it against SANS 10400 before you lodge with
+        council.
+      </p>
+    </div>
+  );
+}
+
+function InspectingState() {
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-3 text-muted-foreground">
+        <Loader2 className="size-5 animate-spin" />
+        <p className="text-sm">Running SANS 10400 checks…</p>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <Skeleton className="h-64" />
+        <Skeleton className="h-64" />
+      </div>
+      <Skeleton className="h-40" />
+    </div>
+  );
+}
+
+function Analysis({
+  audit,
+  extract,
+  sourceText,
+  done,
+  setDone,
+}: {
+  audit: AuditSample;
+  extract: DrawingExtract | null;
+  sourceText: string | null;
+  done: Record<string, boolean>;
+  setDone: (value: Record<string, boolean>) => void;
+}) {
+  const remaining = useMemo(
+    () => audit.failed.filter((row) => !done[row.id]).length,
+    [audit.failed, done],
+  );
 
   function downloadChecklist() {
     downloadBlob(
@@ -245,142 +373,176 @@ function Result({
   }
 
   function downloadDrawing() {
-    if (!drawing) {
+    if (!extract) {
       return;
     }
     downloadBlob(
       `${audit.fileStem}-annotated.dxf`,
-      buildAnnotatedDrawing(audit, drawing ?? extract, dxf ?? undefined),
+      buildAnnotatedDrawing(audit, extract, sourceText ?? undefined),
       "application/dxf",
     );
   }
 
   return (
-    <div className="space-y-14">
-      <header className="max-w-3xl">
-        <h2 className="font-serif text-3xl leading-tight">{audit.project}</h2>
-        <p className="mt-3 text-sm text-stone">
-          {audit.address}
-          {audit.erf ? ` · ${audit.erf}` : ""}
-        </p>
-        <p className="mt-2 text-sm">
-          {audit.occupancy} · {audit.occupancyNote}
-        </p>
-        <p className="mt-2 text-sm">{audit.verdict}</p>
-        {audit.warnings?.length ? (
-          <p className="mt-4 text-sm text-stone">{audit.warnings[0]}</p>
-        ) : null}
-        <button
-          type="button"
-          className="mt-6 text-sm underline-offset-4 hover:underline"
-          onClick={onReplace}
-        >
-          Choose another drawing
-        </button>
-      </header>
-
-      <section>
-        <h3 className="font-serif text-2xl">Passed</h3>
-        {audit.passed.length ? (
-          <table className="mt-6 w-full text-left text-sm">
-            <thead>
-              <tr className="text-stone">
-                <th className="py-2 pr-4 font-normal">Check</th>
-                <th className="py-2 pr-4 font-normal">Numbers/note</th>
-                <th className="py-2 font-normal">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {audit.passed.map((row) => (
-                <tr key={row.id} className="align-top">
-                  <td className="py-3 pr-4">
-                    {row.part} — {row.check}
-                  </td>
-                  <td className="py-3 pr-4 text-stone">{row.detail}</td>
-                  <td className="py-3">Pass</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <p className="mt-4 text-sm text-stone">No passing checks yet.</p>
-        )}
-      </section>
-
-      <section>
-        <h3 className="font-serif text-2xl">Failed</h3>
-        {audit.failed.length ? (
-          <table className="mt-6 w-full text-left text-sm">
-            <thead>
-              <tr className="text-stone">
-                <th className="py-2 pr-4 font-normal">Check</th>
-                <th className="py-2 pr-4 font-normal">Numbers/note</th>
-                <th className="py-2 pr-4 font-normal">What to adjust</th>
-                <th className="py-2 font-normal">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {audit.failed.map((row) => (
-                <tr key={row.id} className="align-top">
-                  <td className="py-3 pr-4">
-                    {row.part} — {row.check}
-                  </td>
-                  <td className="py-3 pr-4 text-stone">{row.detail}</td>
-                  <td className="py-3 pr-4">{row.adjust}</td>
-                  <td className="py-3">Fail</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <p className="mt-4 text-sm text-stone">
-            Nothing failed on the checks we could read.
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1">
+          <p className="text-xs tracking-wide text-muted-foreground uppercase">
+            Project
           </p>
-        )}
-      </section>
-
-      {drawing ? (
-        <section>
-          <h3 className="font-serif text-2xl">Drawing</h3>
-          <form className="mt-6 flex flex-wrap items-end gap-x-6 gap-y-3" onSubmit={addNote}>
-            <label htmlFor={noteId} className="text-sm">
-              Add text
-              <input
-                id={noteId}
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                className="mt-2 block w-72 border-b border-ink bg-transparent py-1"
-              />
-            </label>
-            <button type="submit" className="text-sm underline-offset-4 hover:underline">
-              Show on drawing
-            </button>
-          </form>
-          <div className="mt-6 min-h-64 w-full text-ink">
-            <DrawingPreview extract={drawing} label={audit.label} />
-          </div>
-        </section>
-      ) : null}
-
-      <div className="flex flex-wrap gap-x-8 gap-y-3 text-sm">
-        <button
-          type="button"
-          className="underline-offset-4 hover:underline"
-          onClick={downloadChecklist}
-        >
-          Download checklist
-        </button>
-        <button
-          type="button"
-          className="underline-offset-4 hover:underline disabled:text-stone"
-          onClick={downloadDrawing}
-          disabled={!drawing}
-        >
-          Download annotated drawing
-        </button>
+          <h2 className="font-heading text-lg font-medium md:text-xl">
+            {audit.project}
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {audit.address}
+            {audit.erf ? ` · ${audit.erf}` : ""}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="outline">
+            {audit.occupancy} · {audit.occupancyNote}
+          </Badge>
+          <Badge variant={audit.failed.length ? "destructive" : "secondary"}>
+            {audit.verdict}
+          </Badge>
+        </div>
       </div>
 
-      <p className="max-w-xl text-sm text-stone">{DISCLAIMER}</p>
+      {audit.warnings?.length ? (
+        <p className="text-sm text-muted-foreground">{audit.warnings[0]}</p>
+      ) : null}
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Card>
+          <CardHeader className="border-b">
+            <CardTitle>Passed</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {audit.passed.length ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Part</TableHead>
+                    <TableHead>Check</TableHead>
+                    <TableHead>Detail</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {audit.passed.map((row) => (
+                    <TableRow key={row.id}>
+                      <TableCell className="font-mono text-xs whitespace-normal">
+                        {row.part}
+                      </TableCell>
+                      <TableCell className="whitespace-normal">
+                        {row.check}
+                      </TableCell>
+                      <TableCell className="whitespace-normal text-muted-foreground">
+                        {row.detail}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : (
+              <p className="text-sm text-muted-foreground">No passing checks yet.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="border-b">
+            <CardTitle>Not approved</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {audit.failed.length ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Part</TableHead>
+                    <TableHead>Check</TableHead>
+                    <TableHead>Detail</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {audit.failed.map((row) => (
+                    <TableRow key={row.id}>
+                      <TableCell className="font-mono text-xs whitespace-normal">
+                        {row.part}
+                      </TableCell>
+                      <TableCell className="whitespace-normal">
+                        {row.check}
+                      </TableCell>
+                      <TableCell className="whitespace-normal text-muted-foreground">
+                        {row.detail}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Nothing failed on the checks we could read.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader className="border-b">
+          <CardTitle>
+            What to change
+            {audit.failed.length ? (
+              <span className="ml-2 text-sm font-normal text-muted-foreground">
+                {remaining} left
+              </span>
+            ) : null}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {audit.failed.length ? (
+            <ul className="divide-y">
+              {audit.failed.map((row) => (
+                <li key={row.id} className="flex items-start gap-3 py-3">
+                  <Checkbox
+                    checked={Boolean(done[row.id])}
+                    onCheckedChange={(value) =>
+                      setDone({ ...done, [row.id]: value === true })
+                    }
+                    aria-label={`Mark ${row.check} done`}
+                    className="mt-0.5"
+                  />
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">
+                      {row.part} · {row.check}
+                    </p>
+                    <p className="text-sm text-muted-foreground">{row.adjust}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No drawing changes from these checks.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" variant="outline" onClick={downloadDrawing} disabled={!extract}>
+          Download annotated drawing
+        </Button>
+        <Button type="button" variant="outline" onClick={downloadChecklist}>
+          Download checklist
+        </Button>
+      </div>
+
+      <Separator />
+      <p className="text-xs text-muted-foreground">{DISCLAIMER}</p>
+      <p className="text-xs text-muted-foreground">
+        Finding first. Fixing is the job. Luqmaan Sayed
+      </p>
     </div>
   );
 }
