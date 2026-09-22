@@ -4,6 +4,7 @@ import { useId, useRef, useState } from "react";
 import { DrawingPreview } from "@/components/DrawingPreview";
 import type { AuditSample, SampleDrawing } from "@/data/types";
 import { auditFromDrawing, buildAnnotatedDrawing, extractDrawing } from "@/lib/cad";
+import { dwgToDxf } from "@/lib/cad/dwg-to-dxf";
 import type { DrawingExtract } from "@/lib/cad/extract";
 import { DISCLAIMER, auditToReport, downloadBlob } from "@/lib/checklist";
 
@@ -14,6 +15,30 @@ type PlancheckAppProps = {
 const DRAWING_NAME = /\.(dwg|dxf)$/i;
 const MAX_BYTES = 40 * 1024 * 1024;
 const MIN_SPIN_MS = 700;
+
+function bytesOf(text: string) {
+  const encoded = new TextEncoder().encode(text);
+  const copy = new ArrayBuffer(encoded.byteLength);
+  new Uint8Array(copy).set(encoded);
+  return copy;
+}
+
+async function readDrawing(filename: string, bytes: ArrayBuffer) {
+  if (/\.dwg$/i.test(filename)) {
+    const dxf = await dwgToDxf(bytes);
+    if (dxf) {
+      return {
+        drawing: extractDrawing(filename.replace(/\.dwg$/i, ".dxf"), bytesOf(dxf)),
+        sourceText: dxf,
+      };
+    }
+  }
+
+  return {
+    drawing: extractDrawing(filename, bytes),
+    sourceText: new TextDecoder("utf-8", { fatal: false }).decode(bytes),
+  };
+}
 
 export function PlancheckApp({ samples }: PlancheckAppProps) {
   const inputId = useId();
@@ -56,10 +81,10 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
           setTimeout(resolve, MIN_SPIN_MS);
         }),
       ]);
-      const drawing = extractDrawing(file.name, bytes);
+      const { drawing, sourceText } = await readDrawing(file.name, bytes);
       const result = auditFromDrawing(file.name, drawing);
       setExtract(drawing);
-      setSourceText(new TextDecoder("utf-8", { fatal: false }).decode(bytes));
+      setSourceText(sourceText);
       setAudit(result);
     } catch {
       setError("The drawing could not be read. Export it from CAD and try again.");
@@ -136,6 +161,9 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
           >
             Choose a drawing file (.dwg or .dxf)
           </label>
+          <p className="mt-3 text-sm text-stone">
+            DWG files are converted to DXF in the browser before the check.
+          </p>
         </div>
 
         <p className="mt-8 text-sm text-stone">

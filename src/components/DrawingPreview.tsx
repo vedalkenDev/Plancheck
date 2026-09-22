@@ -23,7 +23,7 @@ export function DrawingPreview({ extract, label }: DrawingPreviewProps) {
         </ul>
         {extract.format === "dwg" ? (
           <p className="mt-4">
-            Geometry is not in this drawing. Export from CAD to preview the plan.
+            This DWG could not be converted, so the plan preview is unavailable.
           </p>
         ) : null}
       </div>
