@@ -10,7 +10,7 @@ function arrayBuffer(bytes: Buffer) {
 
 describe("dwg conversion", () => {
   it("converts a DWG into DXF the drawing reader can use", async () => {
-    const dwg = readFileSync("src/lib/cad/fixtures/sample_2018.dwg");
+    const dwg = readFileSync("public/samples/sample-2018.dwg");
     const dxf = await dwgToDxf(arrayBuffer(dwg));
     assert.ok(dxf);
     assert.match(dxf, /ENTITIES/);

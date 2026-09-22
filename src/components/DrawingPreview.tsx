@@ -9,10 +9,12 @@ type DrawingPreviewProps = {
 };
 
 export function DrawingPreview({ extract, label }: DrawingPreviewProps) {
-  const drawable = extract.geometry.filter((entity) => entity.kind !== "text");
   const bounds = geometryBounds(extract.geometry);
+  const textHeight = extract.geometry.reduce((max, entity) => {
+    return entity.kind === "text" ? Math.max(max, entity.height) : max;
+  }, 0);
 
-  if (!drawable.length || !bounds) {
+  if (!bounds) {
     return (
       <div className="flex min-h-64 flex-col justify-between font-sans text-sm text-stone">
         <p className="text-ink">{label}</p>
@@ -30,7 +32,7 @@ export function DrawingPreview({ extract, label }: DrawingPreviewProps) {
     );
   }
 
-  const pad = 800;
+  const pad = Math.max(800, textHeight * 2);
   const minX = bounds.minX - pad;
   const minY = bounds.minY - pad;
   const width = Math.max(bounds.maxX - bounds.minX + pad * 2, 1);
@@ -114,10 +116,10 @@ export function DrawingPreview({ extract, label }: DrawingPreviewProps) {
             x={entity.p.x}
             y={fy(entity.p.y)}
             fontSize={Math.max(entity.height, stroke * 8)}
-            fill="currentColor"
-            opacity={0.8}
+            fill={entity.layer === "NOTE" ? "#8C3A2F" : "currentColor"}
+            opacity={0.9}
           >
-            {entity.value.slice(0, 42)}
+            {entity.value.slice(0, 120)}
           </text>
         );
       })}

@@ -1,9 +1,10 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useId, useRef, useState, type FormEvent } from "react";
 import { DrawingPreview } from "@/components/DrawingPreview";
 import type { AuditSample, SampleDrawing } from "@/data/types";
 import { auditFromDrawing, buildAnnotatedDrawing, extractDrawing } from "@/lib/cad";
+import { addVisibleText } from "@/lib/cad/annotate";
 import { dwgToDxf } from "@/lib/cad/dwg-to-dxf";
 import type { DrawingExtract } from "@/lib/cad/extract";
 import { DISCLAIMER, auditToReport, downloadBlob } from "@/lib/checklist";
@@ -117,11 +118,12 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
         throw new Error("sample");
       }
       const bytes = await response.arrayBuffer();
-      const drawing = extractDrawing(`${sample.id}.dxf`, bytes);
+      const filename = sample.href.split("/").pop() ?? `${sample.id}.dxf`;
+      const { drawing, sourceText } = await readDrawing(filename, bytes);
       const result = auditFromDrawing(sample.label, drawing);
       result.label = sample.label;
       setExtract(drawing);
-      setSourceText(new TextDecoder("utf-8", { fatal: false }).decode(bytes));
+      setSourceText(sourceText);
       setAudit(result);
     } catch {
       setError("The sample drawing could not be loaded.");
@@ -162,7 +164,7 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
             Choose a drawing file (.dwg or .dxf)
           </label>
           <p className="mt-3 text-sm text-stone">
-            DWG files are converted to DXF in the browser before the check.
+            A DWG opens on the sheet. Add a note and it shows on the drawing.
           </p>
         </div>
 
@@ -218,6 +220,22 @@ function Result({
   sourceText: string | null;
   onReplace: () => void;
 }) {
+  const noteId = useId();
+  const [drawing, setDrawing] = useState(extract);
+  const [dxf, setDxf] = useState(sourceText);
+  const [draft, setDraft] = useState("");
+
+  function addNote(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!drawing) {
+      return;
+    }
+    const next = addVisibleText(drawing, dxf, draft);
+    setDrawing(next.extract);
+    setDxf(next.sourceText);
+    setDraft("");
+  }
+
   function downloadChecklist() {
     downloadBlob(
       `${audit.fileStem}-checklist.txt`,
@@ -227,12 +245,12 @@ function Result({
   }
 
   function downloadDrawing() {
-    if (!extract) {
+    if (!drawing) {
       return;
     }
     downloadBlob(
       `${audit.fileStem}-annotated.dxf`,
-      buildAnnotatedDrawing(audit, extract, sourceText ?? undefined),
+      buildAnnotatedDrawing(audit, drawing ?? extract, dxf ?? undefined),
       "application/dxf",
     );
   }
@@ -321,11 +339,25 @@ function Result({
         )}
       </section>
 
-      {extract ? (
+      {drawing ? (
         <section>
           <h3 className="font-serif text-2xl">Drawing</h3>
+          <form className="mt-6 flex flex-wrap items-end gap-x-6 gap-y-3" onSubmit={addNote}>
+            <label htmlFor={noteId} className="text-sm">
+              Add text
+              <input
+                id={noteId}
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                className="mt-2 block w-72 border-b border-ink bg-transparent py-1"
+              />
+            </label>
+            <button type="submit" className="text-sm underline-offset-4 hover:underline">
+              Show on drawing
+            </button>
+          </form>
           <div className="mt-6 min-h-64 w-full text-ink">
-            <DrawingPreview extract={extract} label={audit.label} />
+            <DrawingPreview extract={drawing} label={audit.label} />
           </div>
         </section>
       ) : null}
@@ -342,7 +374,7 @@ function Result({
           type="button"
           className="underline-offset-4 hover:underline disabled:text-stone"
           onClick={downloadDrawing}
-          disabled={!extract}
+          disabled={!drawing}
         >
           Download annotated drawing
         </button>

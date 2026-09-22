@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
-import { buildAnnotatedDrawing } from "./annotate";
+import { addVisibleText, buildAnnotatedDrawing } from "./annotate";
 import { auditFromDrawing } from "./audit-from-drawing";
 import { extractDrawing } from "./extract";
 import { occupancyFromText } from "../sans/occupancy";
@@ -81,6 +81,18 @@ describe("marine-drive fixture", () => {
     assert.ok(passed.includes("window-schedule"));
     const windows = audit.passed.find((row) => row.id === "window-schedule");
     assert.match(windows?.detail ?? "", /W1/);
+  });
+
+  it("shows added text on the drawing and in the dxf", () => {
+    const next = addVisibleText(extract, text, "Pool fence 1.2 m");
+    const note = next.extract.geometry.find(
+      (entity) => entity.kind === "text" && entity.value === "Pool fence 1.2 m",
+    );
+    assert.ok(note);
+    assert.match(next.sourceText ?? "", /Pool fence 1\.2 m/);
+    const dxf = buildAnnotatedDrawing(audit, next.extract, next.sourceText ?? undefined);
+    assert.match(dxf, /Pool fence 1\.2 m/);
+    assert.match(dxf, /COUNCIL_FIXES/);
   });
 
   it("writes a real annotated drawing with council layers", () => {

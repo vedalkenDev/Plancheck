@@ -10,6 +10,50 @@ const LAYERS = [
   { name: "WINDOW_DIMS", color: 5 },
 ] as const;
 
+export function addVisibleText(
+  extract: DrawingExtract,
+  sourceText: string | null | undefined,
+  value: string,
+) {
+  const text = value.replace(/\s+/g, " ").trim().slice(0, 120);
+  if (!text) {
+    return { extract, sourceText: sourceText ?? null };
+  }
+
+  const bounds = geometryBounds(extract.geometry);
+  const span = bounds
+    ? Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY, 1)
+    : 1000;
+  const height = span / 16;
+  const placed = extract.geometry.filter(
+    (entity) => entity.kind === "text" && entity.layer === "NOTE",
+  ).length;
+  const x = bounds ? bounds.minX : 0;
+  const y = (bounds ? bounds.maxY : height) - height * 1.35 * placed;
+  const entity: GeomEntity = {
+    kind: "text",
+    layer: "NOTE",
+    p: { x, y },
+    height,
+    value: text,
+  };
+  const note = dxfText("NOTE", x, y, height, text);
+  const dxf =
+    sourceText && looksLikeDxf(sourceText)
+      ? injectEntities(sourceText, note)
+      : (sourceText ?? null);
+
+  return {
+    extract: {
+      ...extract,
+      texts: [...extract.texts, { kind: "text" as const, value: text, layer: "NOTE" }],
+      strings: extract.strings.includes(text) ? extract.strings : [...extract.strings, text],
+      geometry: [...extract.geometry, entity],
+    },
+    sourceText: dxf,
+  };
+}
+
 export function buildAnnotatedDrawing(
   audit: AuditSample,
   extract: DrawingExtract,
