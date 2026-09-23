@@ -1,13 +1,14 @@
 "use client";
 
-import { FileUp, Loader2 } from "lucide-react";
-import { useId, useMemo, useRef, useState, type FormEvent } from "react";
+import { FileUp, Loader2, X } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react";
+import { ChangeList, ReviewTitle } from "@/components/check-panels";
 import { DrawingPreview } from "@/components/DrawingPreview";
+import { ReviewDock } from "@/components/ReviewDock";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -188,6 +189,9 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
               extract={extract}
               sourceText={sourceText}
               label={audit?.label ?? "Drawing"}
+              audit={audit}
+              done={done}
+              setDone={setDone}
               onReplace={reset}
               onChange={(next) => {
                 setExtract(next.extract);
@@ -271,13 +275,64 @@ function DrawingPane({
   extract,
   sourceText,
   label,
+  audit,
+  done,
+  setDone,
   onReplace,
   onChange,
 }: {
   extract: DrawingExtract;
   sourceText: string | null;
   label: string;
+  audit: AuditSample | null;
+  done: Record<string, boolean>;
+  setDone: (value: Record<string, boolean>) => void;
   onReplace: () => void;
+  onChange: (next: { extract: DrawingExtract; sourceText: string | null }) => void;
+}) {
+  const [fullscreen, setFullscreen] = useState(false);
+
+  return (
+    <>
+      <div className="flex min-h-0 flex-1 flex-col gap-3 rounded-xl border-2 border-border bg-card p-4">
+        <div className="flex items-center justify-between gap-2">
+          <p className="truncate text-sm font-medium">{label}</p>
+          <Button type="button" variant="ghost" size="sm" onClick={onReplace}>
+            Replace
+          </Button>
+        </div>
+        <NoteForm extract={extract} sourceText={sourceText} onChange={onChange} />
+        <div className="min-h-0 flex-1 overflow-hidden rounded-lg border">
+          <DrawingPreview
+            extract={extract}
+            label={label}
+            onToggleFullscreen={() => setFullscreen(true)}
+          />
+        </div>
+      </div>
+      {fullscreen ? (
+        <FullscreenDrawing
+          extract={extract}
+          sourceText={sourceText}
+          label={label}
+          audit={audit}
+          done={done}
+          setDone={setDone}
+          onChange={onChange}
+          onClose={() => setFullscreen(false)}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function NoteForm({
+  extract,
+  sourceText,
+  onChange,
+}: {
+  extract: DrawingExtract;
+  sourceText: string | null;
   onChange: (next: { extract: DrawingExtract; sourceText: string | null }) => void;
 }) {
   const noteId = useId();
@@ -291,29 +346,105 @@ function DrawingPane({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 rounded-xl border-2 border-border bg-card p-4">
-      <div className="flex items-center justify-between gap-2">
-        <p className="truncate text-sm font-medium">{label}</p>
-        <Button type="button" variant="ghost" size="sm" onClick={onReplace}>
-          Replace
+    <form className="flex flex-wrap items-end gap-2" onSubmit={addNote}>
+      <label htmlFor={noteId} className="min-w-0 flex-1 text-xs text-muted-foreground">
+        Add text
+        <input
+          id={noteId}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          className="mt-1 block w-full border-b border-border bg-transparent py-1 text-sm text-foreground"
+        />
+      </label>
+      <Button type="submit" variant="outline" size="sm">
+        Show on drawing
+      </Button>
+    </form>
+  );
+}
+
+function FullscreenDrawing({
+  extract,
+  sourceText,
+  label,
+  audit,
+  done,
+  setDone,
+  onChange,
+  onClose,
+}: {
+  extract: DrawingExtract;
+  sourceText: string | null;
+  label: string;
+  audit: AuditSample | null;
+  done: Record<string, boolean>;
+  setDone: (value: Record<string, boolean>) => void;
+  onChange: (next: { extract: DrawingExtract; sourceText: string | null }) => void;
+  onClose: () => void;
+}) {
+  const shellRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
+  useEffect(() => {
+    const shell = shellRef.current;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    let entered = false;
+    shell?.requestFullscreen?.().then(
+      () => {
+        entered = true;
+      },
+      () => undefined,
+    );
+
+    function onFullscreenChange() {
+      if (entered && !document.fullscreenElement) {
+        onCloseRef.current();
+      }
+    }
+
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape" && !document.fullscreenElement) {
+        onCloseRef.current();
+      }
+    }
+
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+      window.removeEventListener("keydown", onKey);
+      if (document.fullscreenElement === shell) {
+        void document.exitFullscreen?.();
+      }
+    };
+  }, []);
+
+  return (
+    <div ref={shellRef} className="fixed inset-0 z-50 flex flex-col bg-background">
+      <div className="flex shrink-0 items-center gap-3 border-b px-3 py-2">
+        <p className="max-w-xs truncate text-sm font-medium">{label}</p>
+        <div className="min-w-0 flex-1">
+          <NoteForm extract={extract} sourceText={sourceText} onChange={onChange} />
+        </div>
+        <Button type="button" variant="outline" size="sm" onClick={onClose}>
+          <X />
+          Exit
         </Button>
       </div>
-      <form className="flex flex-wrap items-end gap-2" onSubmit={addNote}>
-        <label htmlFor={noteId} className="min-w-0 flex-1 text-xs text-muted-foreground">
-          Add text
-          <input
-            id={noteId}
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            className="mt-1 block w-full border-b border-border bg-transparent py-1 text-sm text-foreground"
-          />
-        </label>
-        <Button type="submit" variant="outline" size="sm">
-          Show on drawing
-        </Button>
-      </form>
-      <div className="min-h-0 flex-1 overflow-hidden rounded-lg border">
-        <DrawingPreview extract={extract} label={label} />
+      <div className="relative min-h-0 flex-1">
+        <DrawingPreview
+          extract={extract}
+          label={label}
+          fullscreen
+          onToggleFullscreen={onClose}
+        />
+        <ReviewDock audit={audit} done={done} setDone={setDone} />
       </div>
     </div>
   );
@@ -415,7 +546,7 @@ function Analysis({
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader className="border-b">
-            <CardTitle>Passed</CardTitle>
+            <ReviewTitle id="passed" />
           </CardHeader>
           <CardContent>
             {audit.passed.length ? (
@@ -451,7 +582,7 @@ function Analysis({
 
         <Card>
           <CardHeader className="border-b">
-            <CardTitle>Not approved</CardTitle>
+            <ReviewTitle id="failed" />
           </CardHeader>
           <CardContent>
             {audit.failed.length ? (
@@ -490,42 +621,19 @@ function Analysis({
 
       <Card>
         <CardHeader className="border-b">
-          <CardTitle>
-            What to change
-            {audit.failed.length ? (
-              <span className="ml-2 text-sm font-normal text-muted-foreground">
-                {remaining} left
-              </span>
-            ) : null}
-          </CardTitle>
+          <ReviewTitle
+            id="changes"
+            extra={
+              audit.failed.length ? (
+                <span className="text-sm font-normal text-muted-foreground">
+                  {remaining} left
+                </span>
+              ) : null
+            }
+          />
         </CardHeader>
         <CardContent>
-          {audit.failed.length ? (
-            <ul className="divide-y">
-              {audit.failed.map((row) => (
-                <li key={row.id} className="flex items-start gap-3 py-3">
-                  <Checkbox
-                    checked={Boolean(done[row.id])}
-                    onCheckedChange={(value) =>
-                      setDone({ ...done, [row.id]: value === true })
-                    }
-                    aria-label={`Mark ${row.check} done`}
-                    className="mt-0.5"
-                  />
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium">
-                      {row.part} · {row.check}
-                    </p>
-                    <p className="text-sm text-muted-foreground">{row.adjust}</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              No drawing changes from these checks.
-            </p>
-          )}
+          <ChangeList rows={audit.failed} done={done} setDone={setDone} />
         </CardContent>
       </Card>
 
