@@ -12,7 +12,7 @@ export type Point = {
 
 export type GeomEntity =
   | { kind: "line"; layer?: string; a: Point; b: Point }
-  | { kind: "polyline"; layer?: string; closed: boolean; points: Point[] }
+  | { kind: "polyline"; layer?: string; closed: boolean; points: Point[]; fill?: boolean }
   | { kind: "circle"; layer?: string; c: Point; r: number }
   | { kind: "arc"; layer?: string; c: Point; r: number; start: number; end: number }
   | { kind: "text"; layer?: string; p: Point; height: number; value: string };
@@ -122,6 +122,8 @@ function parseDxf(content: string): DrawingExtract {
   let rowSpace = 0;
   let pendingX = 0;
   let points: Point[] = [];
+  let bulges: number[] = [];
+  let chunks: { code: number; value: string }[] = [];
   let hasStart = false;
   let hasEnd = false;
   let hasRadius = false;
@@ -149,10 +151,12 @@ function parseDxf(content: string): DrawingExtract {
     hasStart = false;
     hasEnd = false;
     hasRadius = false;
+    chunks = [];
     if (!keepPolyline) {
       layer = "";
       flags = 0;
       points = [];
+      bulges = [];
     }
   }
 
@@ -173,8 +177,14 @@ function parseDxf(content: string): DrawingExtract {
     if (entity === "VERTEX") {
       entity = "POLYLINE";
     }
-    const combined = stripDxfMarkup(`${value}${extra}`).trim();
     const drawnLayer = layer || undefined;
+    if (entity === "ELLIPSE" || entity === "SOLID" || entity === "HATCH") {
+      for (const shape of shapesFrom(entity, chunks, drawnLayer)) {
+        commit(shape);
+      }
+      return;
+    }
+    const combined = stripDxfMarkup(`${value}${extra}`).trim();
     if (TEXT_ENTITIES.has(entity) && combined) {
       texts.push({
         kind: entity === "MTEXT" ? "mtext" : entity === "TEXT" ? "text" : "attrib",
@@ -225,11 +235,12 @@ function parseDxf(content: string): DrawingExtract {
       (entity === "LWPOLYLINE" || entity === "POLYLINE" || entity === "SPLINE") &&
       points.length >= 2
     ) {
+      const shaped = withBulges(points, bulges, (flags & 1) === 1);
       commit({
         kind: "polyline",
         layer: drawnLayer,
-        closed: (flags & 1) === 1,
-        points: points.slice(),
+        closed: shaped.closed,
+        points: shaped.points,
       });
       return;
     }
@@ -249,6 +260,10 @@ function parseDxf(content: string): DrawingExtract {
     }
     const raw = lines[i + 1] ?? "";
     i += 1;
+
+    if (code !== 0 && (entity === "HATCH" || entity === "SOLID" || entity === "ELLIPSE")) {
+      chunks.push({ code, value: raw.trim() });
+    }
 
     if (code === 0) {
       const next = raw.trim();
@@ -325,6 +340,7 @@ function parseDxf(content: string): DrawingExtract {
       }
       if (isPointList(entity)) {
         points.push({ x: pendingX, y: py });
+        bulges.push(0);
       } else {
         y = py;
         hasStart = true;
@@ -344,6 +360,11 @@ function parseDxf(content: string): DrawingExtract {
       }
     } else if (code === 41 && entity === "INSERT") {
       sx = Number.parseFloat(raw) || 1;
+    } else if (code === 42 && (entity === "LWPOLYLINE" || entity === "VERTEX")) {
+      const bulge = Number.parseFloat(raw);
+      if (bulges.length && Number.isFinite(bulge)) {
+        bulges[bulges.length - 1] = bulge;
+      }
     } else if (code === 42 && entity === "INSERT") {
       sy = Number.parseFloat(raw) || 1;
     } else if (code === 44 && entity === "INSERT") {
@@ -386,6 +407,347 @@ function isPointList(entity: string) {
     entity === "VERTEX" ||
     entity === "SPLINE"
   );
+}
+
+function shapesFrom(
+  entity: string,
+  pairs: { code: number; value: string }[],
+  layer?: string,
+): GeomEntity[] {
+  if (entity === "ELLIPSE") {
+    const ellipse = ellipseFrom(pairs, layer);
+    return ellipse ? [ellipse] : [];
+  }
+  if (entity === "SOLID") {
+    const solid = solidFrom(pairs, layer);
+    return solid ? [solid] : [];
+  }
+  if (entity === "HATCH") {
+    return hatchFrom(pairs, layer);
+  }
+  return [];
+}
+
+function ellipseFrom(
+  pairs: { code: number; value: string }[],
+  layer?: string,
+): GeomEntity | null {
+  let cx = 0;
+  let cy = 0;
+  let mx = 0;
+  let my = 0;
+  let ratio = 1;
+  let start = 0;
+  let end = Math.PI * 2;
+  let hasMajor = false;
+  for (const pair of pairs) {
+    if (pair.code === 10) {
+      cx = dxfNum(pair.value);
+    } else if (pair.code === 20) {
+      cy = dxfNum(pair.value);
+    } else if (pair.code === 11) {
+      mx = dxfNum(pair.value);
+      hasMajor = true;
+    } else if (pair.code === 21) {
+      my = dxfNum(pair.value);
+    } else if (pair.code === 40) {
+      ratio = dxfNum(pair.value) || 1;
+    } else if (pair.code === 41) {
+      start = dxfNum(pair.value);
+    } else if (pair.code === 42) {
+      end = dxfNum(pair.value);
+    }
+  }
+  if (!hasMajor) {
+    return null;
+  }
+  const points = sampleEllipse({ x: cx, y: cy }, { x: mx, y: my }, ratio, start, end);
+  if (points.length < 2) {
+    return null;
+  }
+  const sweep = Math.abs(end - start);
+  const full = sweep < 1e-4 || Math.abs(sweep - Math.PI * 2) < 1e-3;
+  return { kind: "polyline", layer, closed: full, points };
+}
+
+function sampleEllipse(center: Point, major: Point, ratio: number, start: number, end: number) {
+  const rx = Math.hypot(major.x, major.y);
+  if (rx < 1e-9) {
+    return [];
+  }
+  const rot = Math.atan2(major.y, major.x);
+  const ry = rx * ratio;
+  let sweep = end - start;
+  if (sweep <= 1e-6) {
+    sweep += Math.PI * 2;
+  }
+  const steps = Math.max(12, Math.ceil((48 * sweep) / (Math.PI * 2)));
+  const points: Point[] = [];
+  const cos = Math.cos(rot);
+  const sin = Math.sin(rot);
+  for (let i = 0; i <= steps; i += 1) {
+    const t = start + (sweep * i) / steps;
+    const x = rx * Math.cos(t);
+    const y = ry * Math.sin(t);
+    points.push({
+      x: center.x + x * cos - y * sin,
+      y: center.y + x * sin + y * cos,
+    });
+  }
+  return points;
+}
+
+function solidFrom(
+  pairs: { code: number; value: string }[],
+  layer?: string,
+): GeomEntity | null {
+  const xs = new Map<number, number>();
+  const ys = new Map<number, number>();
+  for (const pair of pairs) {
+    if (pair.code >= 10 && pair.code <= 13) {
+      xs.set(pair.code, dxfNum(pair.value));
+    } else if (pair.code >= 20 && pair.code <= 23) {
+      ys.set(pair.code - 10, dxfNum(pair.value));
+    }
+  }
+  const corner = (code: number) =>
+    xs.has(code) && ys.has(code) ? { x: xs.get(code) ?? 0, y: ys.get(code) ?? 0 } : null;
+  const first = corner(10);
+  const second = corner(11);
+  const third = corner(12);
+  const fourth = corner(13);
+  if (!first || !second || !third) {
+    return null;
+  }
+  const distinctFourth =
+    fourth !== null && Math.hypot(fourth.x - third.x, fourth.y - third.y) > 1e-6;
+  return {
+    kind: "polyline",
+    layer,
+    closed: true,
+    fill: true,
+    points: distinctFourth ? [first, second, fourth, third] : [first, second, third],
+  };
+}
+
+function hatchFrom(pairs: { code: number; value: string }[], layer?: string) {
+  const solid = pairs.some((pair) => pair.code === 70 && dxfNum(pair.value) === 1);
+  const out: GeomEntity[] = [];
+  let index = pairs.findIndex((pair) => pair.code === 91);
+  if (index < 0) {
+    return out;
+  }
+  const paths = dxfNum(pairs[index]?.value ?? "");
+  index += 1;
+  for (let path = 0; path < paths && index < pairs.length; path += 1) {
+    while (index < pairs.length && pairs[index]?.code !== 92) {
+      index += 1;
+    }
+    if (index >= pairs.length) {
+      break;
+    }
+    const flag = dxfNum(pairs[index]?.value ?? "");
+    index += 1;
+    if ((flag & 2) === 2) {
+      let hasBulge = false;
+      let closed = true;
+      while (index < pairs.length && pairs[index]?.code !== 93) {
+        if (pairs[index]?.code === 72) {
+          hasBulge = dxfNum(pairs[index]?.value ?? "") === 1;
+        }
+        if (pairs[index]?.code === 73) {
+          closed = dxfNum(pairs[index]?.value ?? "") === 1;
+        }
+        index += 1;
+      }
+      if (index >= pairs.length) {
+        break;
+      }
+      const count = dxfNum(pairs[index]?.value ?? "");
+      index += 1;
+      const points: Point[] = [];
+      const bulges: number[] = [];
+      for (let vertex = 0; vertex < count && index < pairs.length; vertex += 1) {
+        let x: number | null = null;
+        let y: number | null = null;
+        let bulge = 0;
+        while (index < pairs.length) {
+          const pair = pairs[index];
+          if (!pair || pair.code === 92 || pair.code === 93) {
+            break;
+          }
+          index += 1;
+          if (pair.code === 10) {
+            x = dxfNum(pair.value);
+          } else if (pair.code === 20 && x !== null) {
+            y = dxfNum(pair.value);
+            if (!hasBulge) {
+              break;
+            }
+          } else if (pair.code === 42 && y !== null) {
+            bulge = dxfNum(pair.value);
+            break;
+          }
+        }
+        if (x !== null && y !== null) {
+          points.push({ x, y });
+          bulges.push(bulge);
+        }
+      }
+      const shaped = withBulges(points, bulges, closed);
+      if (shaped.points.length >= 2) {
+        out.push({
+          kind: "polyline",
+          layer,
+          closed: shaped.closed,
+          points: shaped.points,
+          fill: solid && shaped.closed,
+        });
+      }
+    } else {
+      while (index < pairs.length && pairs[index]?.code !== 93) {
+        index += 1;
+      }
+      if (index >= pairs.length) {
+        break;
+      }
+      const edges = dxfNum(pairs[index]?.value ?? "");
+      index += 1;
+      for (let edge = 0; edge < edges && index < pairs.length; edge += 1) {
+        while (index < pairs.length && pairs[index]?.code !== 72 && pairs[index]?.code !== 92) {
+          index += 1;
+        }
+        if (index >= pairs.length || pairs[index]?.code !== 72) {
+          break;
+        }
+        const type = dxfNum(pairs[index]?.value ?? "");
+        index += 1;
+        const bag: { code: number; value: string }[] = [];
+        while (
+          index < pairs.length &&
+          pairs[index]?.code !== 72 &&
+          pairs[index]?.code !== 92 &&
+          pairs[index]?.code !== 97
+        ) {
+          const pair = pairs[index];
+          if (pair) {
+            bag.push(pair);
+          }
+          index += 1;
+        }
+        const drawn = hatchEdge(type, bag, layer);
+        if (drawn) {
+          out.push(drawn);
+        }
+      }
+    }
+  }
+  return out;
+}
+
+function hatchEdge(
+  type: number,
+  pairs: { code: number; value: string }[],
+  layer?: string,
+): GeomEntity | null {
+  const value = (code: number) => dxfNum(pairs.find((pair) => pair.code === code)?.value ?? "");
+  if (type === 1) {
+    return {
+      kind: "line",
+      layer,
+      a: { x: value(10), y: value(20) },
+      b: { x: value(11), y: value(21) },
+    };
+  }
+  if (type === 2) {
+    let start = value(50);
+    let end = value(51);
+    const ccw = pairs.find((pair) => pair.code === 73);
+    if (ccw && dxfNum(ccw.value) === 0) {
+      const swap = start;
+      start = end;
+      end = swap;
+    }
+    return {
+      kind: "arc",
+      layer,
+      c: { x: value(10), y: value(20) },
+      r: value(40),
+      start,
+      end,
+    };
+  }
+  return null;
+}
+
+function withBulges(points: Point[], bulges: number[], closed: boolean) {
+  const curved = bulges.some((bulge) => Math.abs(bulge) > 1e-8);
+  if (!curved || points.length < 2) {
+    return { points, closed };
+  }
+  const verts = points.map((point, index) => ({
+    x: point.x,
+    y: point.y,
+    bulge: bulges[index] ?? 0,
+  }));
+  if (closed) {
+    verts.push({ x: verts[0].x, y: verts[0].y, bulge: 0 });
+  }
+  const out: Point[] = [];
+  for (let i = 0; i < verts.length - 1; i += 1) {
+    out.push({ x: verts[i].x, y: verts[i].y });
+    if (Math.abs(verts[i].bulge) > 1e-8) {
+      out.push(...arcPoints(verts[i], verts[i + 1], verts[i].bulge));
+    }
+  }
+  out.push({ x: verts[verts.length - 1].x, y: verts[verts.length - 1].y });
+  const looped =
+    closed &&
+    out.length > 1 &&
+    Math.hypot(out[0].x - out[out.length - 1].x, out[0].y - out[out.length - 1].y) < 1e-6;
+  return { points: looped ? out.slice(0, -1) : out, closed: looped };
+}
+
+function arcPoints(from: Point, to: Point, bulge: number) {
+  const theta = Math.atan(Math.abs(bulge)) * 4;
+  const start = bulge < 0 ? from : to;
+  const end = bulge < 0 ? to : from;
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const length = Math.hypot(dx, dy);
+  if (length < 1e-9 || theta < 1e-6) {
+    return [];
+  }
+  const offset = Math.abs(length / 2 / Math.tan(theta / 2));
+  const nx = -dy / length;
+  const ny = dx / length;
+  const side = theta < Math.PI ? -1 : 1;
+  const cx = (start.x + end.x) / 2 + nx * offset * side;
+  const cy = (start.y + end.y) / 2 + ny * offset * side;
+  const fromAngle = Math.atan2(end.y - cy, end.x - cx);
+  let toAngle = Math.atan2(start.y - cy, start.x - cx);
+  if (toAngle < fromAngle) {
+    toAngle += Math.PI * 2;
+  }
+  const radius = Math.hypot(end.x - cx, end.y - cy);
+  const steps = Math.max(4, Math.ceil((toAngle - fromAngle) / (Math.PI / 18)));
+  const points: Point[] = [];
+  for (let i = 1; i < steps; i += 1) {
+    const angle = fromAngle + ((toAngle - fromAngle) * i) / steps;
+    points.push({
+      x: cx + radius * Math.cos(angle),
+      y: cy + radius * Math.sin(angle),
+    });
+  }
+  if (bulge < 0) {
+    points.reverse();
+  }
+  return points;
+}
+
+function dxfNum(value: string) {
+  const number = Number.parseFloat(value);
+  return Number.isFinite(number) ? number : 0;
 }
 
 function isDrawn(entity: GeomEntity) {

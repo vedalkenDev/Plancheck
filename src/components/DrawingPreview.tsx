@@ -312,7 +312,15 @@ function renderEntity(
     if (!d) {
       return null;
     }
-    return <path key={`p-${index}`} d={d} {...stroke} />;
+    return (
+      <path
+        key={`p-${index}`}
+        d={d}
+        {...stroke}
+        fill={entity.fill ? "currentColor" : "none"}
+        fillOpacity={entity.fill ? 0.16 : undefined}
+      />
+    );
   }
   if ((entity.kind === "circle" || entity.kind === "arc") && (entity.r > span * 2 || !onSheet(entity.c))) {
     return null;

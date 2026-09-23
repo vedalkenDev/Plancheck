@@ -306,6 +306,180 @@ EOF
   });
 });
 
+describe("curved and filled geometry", () => {
+  it("bows a polyline bulge into an arc", () => {
+    const extract = fromText(`
+0
+SECTION
+2
+ENTITIES
+0
+LWPOLYLINE
+8
+CURB
+90
+2
+70
+0
+10
+0.0
+20
+0.0
+42
+1.0
+10
+2.0
+20
+0.0
+0
+ENDSEC
+0
+EOF
+`);
+    const curve = extract.geometry.find((entity) => entity.kind === "polyline");
+    assert.ok(curve && curve.kind === "polyline");
+    assert.ok(curve.points.length > 4);
+    const low = Math.min(...curve.points.map((point) => point.y));
+    assert.ok(low < -0.9);
+  });
+
+  it("draws an ellipse around its major axis", () => {
+    const extract = fromText(`
+0
+SECTION
+2
+ENTITIES
+0
+ELLIPSE
+8
+SITE
+10
+0.0
+20
+0.0
+11
+4.0
+21
+0.0
+40
+0.5
+41
+0.0
+42
+6.283185
+0
+ENDSEC
+0
+EOF
+`);
+    const ellipse = extract.geometry.find((entity) => entity.kind === "polyline");
+    assert.ok(ellipse && ellipse.kind === "polyline" && ellipse.closed);
+    const bounds = geometryBounds(extract.geometry);
+    assert.ok(bounds);
+    assert.ok(Math.abs(bounds.minX + 4) < 0.05);
+    assert.ok(Math.abs(bounds.maxX - 4) < 0.05);
+    assert.ok(Math.abs(bounds.minY + 2) < 0.05);
+    assert.ok(Math.abs(bounds.maxY - 2) < 0.05);
+  });
+
+  it("fills a solid in drawing order", () => {
+    const extract = fromText(`
+0
+SECTION
+2
+ENTITIES
+0
+SOLID
+8
+POCHE
+10
+0.0
+20
+0.0
+11
+2.0
+21
+0.0
+12
+0.0
+22
+1.0
+13
+2.0
+23
+1.0
+0
+ENDSEC
+0
+EOF
+`);
+    const solid = extract.geometry.find((entity) => entity.kind === "polyline");
+    assert.ok(solid && solid.kind === "polyline" && solid.fill && solid.closed);
+    assert.deepEqual(
+      solid.points.map((point) => [point.x, point.y]),
+      [
+        [0, 0],
+        [2, 0],
+        [2, 1],
+        [0, 1],
+      ],
+    );
+  });
+
+  it("keeps a hatch boundary and fills a solid hatch", () => {
+    const extract = fromText(`
+0
+SECTION
+2
+ENTITIES
+0
+HATCH
+8
+SLAB
+10
+0.0
+20
+0.0
+70
+1
+91
+1
+92
+7
+72
+0
+73
+1
+93
+4
+10
+0.0
+20
+0.0
+10
+6.0
+20
+0.0
+10
+6.0
+20
+3.0
+10
+0.0
+20
+3.0
+0
+ENDSEC
+0
+EOF
+`);
+    const slab = extract.geometry.find((entity) => entity.kind === "polyline");
+    assert.ok(slab && slab.kind === "polyline" && slab.fill && slab.closed);
+    assert.equal(slab.points.length, 4);
+    assert.equal(slab.layer, "SLAB");
+  });
+});
+
 describe("sample drawings", () => {
   it("still frames the marine drive site", () => {
     const bytes = readFileSync("public/samples/marine-drive.dxf");
