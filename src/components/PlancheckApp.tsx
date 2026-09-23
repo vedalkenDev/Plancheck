@@ -158,7 +158,7 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
   }
 
   return (
-    <div className="flex min-h-svh flex-col bg-background">
+    <div className="flex min-h-svh flex-col bg-background lg:h-svh lg:overflow-hidden">
       <header className="flex h-16 shrink-0 items-center justify-between gap-4 border-b px-4 md:px-6">
         <h1 className="font-heading text-xl font-semibold tracking-tight md:text-2xl">
           Plancheck
@@ -174,8 +174,8 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
         </div>
       </header>
 
-      <div className="grid min-h-0 flex-1 lg:h-[calc(100svh-4rem)] lg:grid-cols-3">
-        <section className="flex min-h-[28rem] flex-col border-b p-4 lg:border-r lg:border-b-0 lg:p-6">
+      <div className="grid min-h-0 flex-1 lg:grid-cols-3">
+        <section className="flex min-h-[28rem] flex-col border-b p-4 lg:min-h-0 lg:overflow-hidden lg:border-r lg:border-b-0 lg:p-6">
           <input
             ref={inputRef}
             id={inputId}
