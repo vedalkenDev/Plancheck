@@ -10,12 +10,18 @@ export type Point = {
   y: number;
 };
 
+type Appearance = {
+  layer?: string;
+  color?: string;
+  weight?: number;
+};
+
 export type GeomEntity =
-  | { kind: "line"; layer?: string; a: Point; b: Point }
-  | { kind: "polyline"; layer?: string; closed: boolean; points: Point[]; fill?: boolean }
-  | { kind: "circle"; layer?: string; c: Point; r: number }
-  | { kind: "arc"; layer?: string; c: Point; r: number; start: number; end: number }
-  | { kind: "text"; layer?: string; p: Point; height: number; value: string };
+  | (Appearance & { kind: "line"; a: Point; b: Point })
+  | (Appearance & { kind: "polyline"; closed: boolean; points: Point[]; fill?: boolean })
+  | (Appearance & { kind: "circle"; c: Point; r: number })
+  | (Appearance & { kind: "arc"; c: Point; r: number; start: number; end: number })
+  | (Appearance & { kind: "text"; p: Point; height: number; value: string });
 
 export type DrawingExtract = {
   format: "dxf" | "dwg" | "unknown";
@@ -30,7 +36,7 @@ const JUNK =
 
 const HEX = /^[0-9A-Fa-f]{8,}$/;
 
-const TEXT_ENTITIES = new Set(["TEXT", "MTEXT", "ATTRIB", "ATTDEF", "DIMENSION"]);
+const TEXT_ENTITIES = new Set(["TEXT", "MTEXT", "ATTRIB", "ATTDEF"]);
 
 export function extractDrawing(filename: string, bytes: ArrayBuffer): DrawingExtract {
   const utf8 = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
@@ -73,6 +79,8 @@ type InsertEntity = {
   kind: "insert";
   name: string;
   layer?: string;
+  color?: string;
+  weight?: number;
   p: Point;
   sx: number;
   sy: number;
@@ -95,6 +103,7 @@ function parseDxf(content: string): DrawingExtract {
   const texts: DrawingText[] = [];
   const entityCounts: Record<string, number> = {};
   const blocks = new Map<string, BlockDef>();
+  const layers = new Map<string, { color?: number; weight?: number }>();
   const model: RawEntity[] = [];
 
   let section = "";
@@ -127,6 +136,12 @@ function parseDxf(content: string): DrawingExtract {
   let hasStart = false;
   let hasEnd = false;
   let hasRadius = false;
+  let aci: number | null = null;
+  let lineweight: number | null = null;
+  let degree = 3;
+  let knots: number[] = [];
+  let fitPoints: Point[] = [];
+  let pendingFitX = 0;
 
   function resetEntity(next: string, keepPolyline: boolean) {
     entity = next;
@@ -151,6 +166,12 @@ function parseDxf(content: string): DrawingExtract {
     hasStart = false;
     hasEnd = false;
     hasRadius = false;
+    aci = null;
+    lineweight = null;
+    degree = 3;
+    knots = [];
+    fitPoints = [];
+    pendingFitX = 0;
     chunks = [];
     if (!keepPolyline) {
       layer = "";
@@ -164,12 +185,19 @@ function parseDxf(content: string): DrawingExtract {
     if (!raw || /^defpoints$/i.test(raw.layer ?? "")) {
       return;
     }
+    const known = raw.layer ? layers.get(raw.layer.toLowerCase()) : undefined;
+    const color = aciColor(aci, known?.color);
+    const weight = strokeWeight(lineweight, known?.weight);
+    const painted =
+      color || weight !== undefined
+        ? { ...raw, ...(color ? { color } : {}), ...(weight !== undefined ? { weight } : {}) }
+        : raw;
     if (openBlock && entity !== "BLOCK") {
-      openBlock.entities.push(raw);
+      openBlock.entities.push(painted);
       return;
     }
     if (section === "ENTITIES") {
-      model.push(raw);
+      model.push(painted);
     }
   }
 
@@ -185,6 +213,53 @@ function parseDxf(content: string): DrawingExtract {
       return;
     }
     const combined = stripDxfMarkup(`${value}${extra}`).trim();
+    if (entity === "DIMENSION") {
+      if (combined) {
+        texts.push({
+          kind: "text",
+          value: combined,
+          layer: drawnLayer,
+          tag: tag || undefined,
+        });
+      }
+      if (tag && findBlock(blocks, tag)) {
+        commit({
+          kind: "insert",
+          name: tag,
+          layer: drawnLayer,
+          p: { x: 0, y: 0 },
+          sx: 1,
+          sy: 1,
+          rot: 0,
+          cols: 1,
+          rows: 1,
+          colSpace: 0,
+          rowSpace: 0,
+        });
+      } else if (combined) {
+        commit({
+          kind: "text",
+          layer: drawnLayer,
+          p: { x: hasEnd ? x2 : x, y: hasEnd ? y2 : y },
+          height,
+          value: combined,
+        });
+      }
+      return;
+    }
+    if (entity === "SPLINE") {
+      const curve =
+        splinePoints(points, knots, degree) ?? (fitPoints.length >= 2 ? fitPoints : points);
+      if (curve.length >= 2) {
+        commit({
+          kind: "polyline",
+          layer: drawnLayer,
+          closed: (flags & 1) === 1,
+          points: curve,
+        });
+      }
+      return;
+    }
     if (TEXT_ENTITIES.has(entity) && combined) {
       texts.push({
         kind: entity === "MTEXT" ? "mtext" : entity === "TEXT" ? "text" : "attrib",
@@ -220,6 +295,11 @@ function parseDxf(content: string): DrawingExtract {
     }
     if (entity === "LAYER" && tag) {
       texts.push({ kind: "layer", value: tag });
+      const color = aci === null ? undefined : Math.abs(Math.trunc(aci));
+      layers.set(tag.toLowerCase(), {
+        color: color && color < 256 ? color : undefined,
+        weight: lineweight !== null && lineweight >= 0 ? lineweight : undefined,
+      });
       return;
     }
     if (entity === "LINE" && hasStart && hasEnd) {
@@ -232,7 +312,7 @@ function parseDxf(content: string): DrawingExtract {
       return;
     }
     if (
-      (entity === "LWPOLYLINE" || entity === "POLYLINE" || entity === "SPLINE") &&
+      (entity === "LWPOLYLINE" || entity === "POLYLINE") &&
       points.length >= 2
     ) {
       const shaped = withBulges(points, bulges, (flags & 1) === 1);
@@ -346,15 +426,27 @@ function parseDxf(content: string): DrawingExtract {
         hasStart = true;
       }
     } else if (code === 11) {
-      x2 = Number.parseFloat(raw);
+      if (entity === "SPLINE") {
+        pendingFitX = Number.parseFloat(raw);
+      } else {
+        x2 = Number.parseFloat(raw);
+      }
     } else if (code === 21) {
-      y2 = Number.parseFloat(raw);
-      hasEnd = true;
+      if (entity === "SPLINE") {
+        fitPoints.push({ x: pendingFitX, y: Number.parseFloat(raw) });
+      } else {
+        y2 = Number.parseFloat(raw);
+        hasEnd = true;
+      }
     } else if (code === 40) {
       const num = Number.parseFloat(raw);
       if (entity === "CIRCLE" || entity === "ARC") {
         r = num;
         hasRadius = true;
+      } else if (entity === "SPLINE") {
+        if (Number.isFinite(num)) {
+          knots.push(num);
+        }
       } else if (Number.isFinite(num) && num > 0) {
         height = num;
       }
@@ -382,14 +474,30 @@ function parseDxf(content: string): DrawingExtract {
       } else {
         flags = num;
       }
-    } else if (code === 71 && entity === "INSERT") {
-      rows = Number.parseInt(raw.trim(), 10) || 1;
+    } else if (code === 62) {
+      const num = Number.parseInt(raw.trim(), 10);
+      if (Number.isFinite(num)) {
+        aci = num;
+      }
+    } else if (code === 71) {
+      const num = Number.parseInt(raw.trim(), 10) || 0;
+      if (entity === "INSERT") {
+        rows = num || 1;
+      } else if (entity === "SPLINE" && num > 0) {
+        degree = num;
+      }
+    } else if (code === 370) {
+      const num = Number.parseInt(raw.trim(), 10);
+      if (Number.isFinite(num)) {
+        lineweight = num;
+      }
     }
   }
   flush();
 
   const placed = placeInserts(model, blocks);
-  const geometry = placed.some(isDrawn) ? placed : modelSpaceFallback(blocks);
+  const fallback = placed.some(isDrawn) ? placed : modelSpaceFallback(blocks);
+  const geometry = fallback.length ? fallback : placed;
 
   return {
     format: "dxf",
@@ -748,6 +856,167 @@ function arcPoints(from: Point, to: Point, bulge: number) {
 function dxfNum(value: string) {
   const number = Number.parseFloat(value);
   return Number.isFinite(number) ? number : 0;
+}
+
+function aciColor(entityAci: number | null, layerAci: number | undefined) {
+  const picked =
+    entityAci === null || Math.abs(entityAci) === 256 ? layerAci : Math.abs(Math.trunc(entityAci));
+  if (picked === undefined) {
+    return undefined;
+  }
+  const index = Math.abs(Math.trunc(picked));
+  if (index === 0 || index === 7 || index >= 256) {
+    return undefined;
+  }
+  return aciHex(index);
+}
+
+function strokeWeight(entityWeight: number | null, layerWeight: number | undefined) {
+  const hundredths =
+    entityWeight === null || entityWeight === -1
+      ? layerWeight
+      : entityWeight >= 0
+        ? entityWeight
+        : undefined;
+  if (hundredths === undefined || hundredths < 0) {
+    return undefined;
+  }
+  return Math.min(3.2, Math.max(0.75, hundredths / 30));
+}
+
+const ACI_BASIC = [
+  "#ff0000",
+  "#ffff00",
+  "#00ff00",
+  "#00ffff",
+  "#0000ff",
+  "#ff00ff",
+  "#ffffff",
+  "#808080",
+  "#c0c0c0",
+];
+
+const ACI_HUES: ReadonlyArray<readonly [number, number, number]> = [
+  [255, 0, 0],
+  [255, 63, 0],
+  [255, 127, 0],
+  [255, 191, 0],
+  [255, 255, 0],
+  [191, 255, 0],
+  [127, 255, 0],
+  [63, 255, 0],
+  [0, 255, 0],
+  [0, 255, 63],
+  [0, 255, 127],
+  [0, 255, 191],
+  [0, 255, 255],
+  [0, 191, 255],
+  [0, 127, 255],
+  [0, 63, 255],
+  [0, 0, 255],
+  [63, 0, 255],
+  [127, 0, 255],
+  [191, 0, 255],
+  [255, 0, 255],
+  [255, 0, 191],
+  [255, 0, 127],
+  [255, 0, 63],
+];
+
+function aciHex(index: number) {
+  if (index >= 1 && index <= 9) {
+    return ACI_BASIC[index - 1];
+  }
+  if (index >= 250 && index <= 255) {
+    const gray = [51, 91, 132, 173, 214, 255][index - 250];
+    return rgbHex(gray, gray, gray);
+  }
+  if (index < 10 || index > 249) {
+    return undefined;
+  }
+  const group = index - 10;
+  const hue = ACI_HUES[Math.floor(group / 10)];
+  const scale = [255, 204, 153, 127, 76][Math.floor((group % 10) / 2)];
+  const max = Math.max(hue[0], hue[1], hue[2]);
+  const tint = group % 2 === 1;
+  const scaled = hue.map((channel) =>
+    Math.round(((tint && channel === 0 ? max / 2 : channel) * scale) / 255),
+  );
+  return rgbHex(scaled[0], scaled[1], scaled[2]);
+}
+
+function rgbHex(r: number, g: number, b: number) {
+  return `#${[r, g, b].map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function splinePoints(controls: Point[], knots: number[], degree: number) {
+  const count = controls.length;
+  const p = Math.trunc(degree);
+  if (count < 2 || p < 1 || p >= count) {
+    return null;
+  }
+  const u = knots.length >= count + p + 1 ? knots : clampedKnots(count, p);
+  const from = u[p];
+  const to = u[count];
+  if (!Number.isFinite(from) || !Number.isFinite(to) || to - from < 1e-9) {
+    return null;
+  }
+  const steps = Math.max(24, (count - p) * 8);
+  const points: Point[] = [];
+  for (let i = 0; i <= steps; i += 1) {
+    const t = i === steps ? to : from + ((to - from) * i) / steps;
+    const point = deBoor(controls, u, p, t);
+    if (!point) {
+      return null;
+    }
+    points.push(point);
+  }
+  return points;
+}
+
+function clampedKnots(count: number, degree: number) {
+  const knots: number[] = [];
+  for (let i = 0; i < count + degree + 1; i += 1) {
+    if (i <= degree) {
+      knots.push(0);
+    } else if (i >= count) {
+      knots.push(1);
+    } else {
+      knots.push((i - degree) / (count - degree));
+    }
+  }
+  return knots;
+}
+
+function deBoor(controls: Point[], knots: number[], degree: number, t: number) {
+  const count = controls.length;
+  let span = count - 1;
+  if (t < knots[count] - 1e-12) {
+    span = degree;
+    while (span < count - 1 && t >= knots[span + 1]) {
+      span += 1;
+    }
+  }
+  const d: Point[] = [];
+  for (let j = 0; j <= degree; j += 1) {
+    const control = controls[span - degree + j];
+    if (!control) {
+      return null;
+    }
+    d.push({ x: control.x, y: control.y });
+  }
+  for (let r = 1; r <= degree; r += 1) {
+    for (let j = degree; j >= r; j -= 1) {
+      const i = span - degree + j;
+      const denom = knots[i + degree - r + 1] - knots[i];
+      const alpha = Math.abs(denom) < 1e-12 ? 0 : (t - knots[i]) / denom;
+      d[j] = {
+        x: (1 - alpha) * d[j - 1].x + alpha * d[j].x,
+        y: (1 - alpha) * d[j - 1].y + alpha * d[j].y,
+      };
+    }
+  }
+  return d[degree];
 }
 
 function isDrawn(entity: GeomEntity) {

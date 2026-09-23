@@ -480,6 +480,236 @@ EOF
   });
 });
 
+describe("dimension blocks, layers, and splines", () => {
+  it("keeps a dimension block in world coordinates", () => {
+    const extract = fromText(`
+0
+SECTION
+2
+BLOCKS
+0
+BLOCK
+2
+*D1
+10
+0.0
+20
+0.0
+0
+LINE
+8
+DIM
+10
+10.0
+20
+10.0
+11
+30.0
+21
+10.0
+0
+ENDBLK
+0
+ENDSEC
+0
+SECTION
+2
+ENTITIES
+0
+DIMENSION
+8
+DIM
+2
+*D1
+10
+500.0
+20
+500.0
+11
+0.0
+21
+0.0
+1
+2400
+0
+ENDSEC
+0
+EOF
+`);
+    const line = extract.geometry.find((entity) => entity.kind === "line");
+    assert.ok(line && line.kind === "line");
+    assert.ok(Math.abs(line.a.x - 10) < 0.01);
+    assert.ok(Math.abs(line.a.y - 10) < 0.01);
+    assert.ok(Math.abs(line.b.x - 30) < 0.01);
+    assert.equal(
+      extract.geometry.some((entity) => entity.kind === "text" && entity.value === "2400"),
+      false,
+    );
+    assert.ok(extract.strings.includes("2400"));
+  });
+
+  it("places dimension text when the block is missing", () => {
+    const extract = fromText(`
+0
+SECTION
+2
+ENTITIES
+0
+DIMENSION
+2
+*D9
+10
+5.0
+20
+5.0
+11
+12.0
+21
+8.0
+1
+900
+0
+ENDSEC
+0
+EOF
+`);
+    const label = extract.geometry.find((entity) => entity.kind === "text");
+    assert.ok(label && label.kind === "text");
+    assert.equal(label.value, "900");
+    assert.ok(Math.abs(label.p.x - 12) < 0.01);
+    assert.ok(Math.abs(label.p.y - 8) < 0.01);
+  });
+
+  it("paints layer colors and lets an entity override them", () => {
+    const extract = fromText(`
+0
+SECTION
+2
+TABLES
+0
+LAYER
+2
+WALLS
+62
+1
+370
+50
+0
+LAYER
+2
+PAPER
+62
+7
+0
+ENDSEC
+0
+SECTION
+2
+ENTITIES
+0
+LINE
+8
+WALLS
+10
+0.0
+20
+0.0
+11
+4.0
+21
+0.0
+0
+LINE
+8
+WALLS
+62
+3
+10
+0.0
+20
+1.0
+11
+4.0
+21
+1.0
+0
+LINE
+8
+PAPER
+10
+0.0
+20
+2.0
+11
+4.0
+21
+2.0
+0
+ENDSEC
+0
+EOF
+`);
+    const [red, green, paper] = extract.geometry.filter((entity) => entity.kind === "line");
+    assert.ok(red && red.kind === "line");
+    assert.equal(red.color, "#ff0000");
+    assert.ok(red.weight !== undefined && Math.abs(red.weight - 50 / 30) < 0.01);
+    assert.ok(green && green.kind === "line");
+    assert.equal(green.color, "#00ff00");
+    assert.ok(paper && paper.kind === "line");
+    assert.equal(paper.color, undefined);
+  });
+
+  it("evaluates a quadratic spline instead of its control polygon", () => {
+    const extract = fromText(`
+0
+SECTION
+2
+ENTITIES
+0
+SPLINE
+71
+2
+40
+0.0
+40
+0.0
+40
+0.0
+40
+1.0
+40
+1.0
+40
+1.0
+10
+0.0
+20
+0.0
+10
+1.0
+20
+2.0
+10
+2.0
+20
+0.0
+0
+ENDSEC
+0
+EOF
+`);
+    const curve = extract.geometry.find((entity) => entity.kind === "polyline");
+    assert.ok(curve && curve.kind === "polyline");
+    assert.ok(curve.points.length > 3);
+    const high = Math.max(...curve.points.map((point) => point.y));
+    assert.ok(high < 1.2);
+    const mid = curve.points.reduce((best, point) =>
+      Math.hypot(point.x - 1, point.y - 1) < Math.hypot(best.x - 1, best.y - 1) ? point : best,
+    );
+    assert.ok(Math.hypot(mid.x - 1, mid.y - 1) < 0.08);
+  });
+});
+
 describe("sample drawings", () => {
   it("still frames the marine drive site", () => {
     const bytes = readFileSync("public/samples/marine-drive.dxf");

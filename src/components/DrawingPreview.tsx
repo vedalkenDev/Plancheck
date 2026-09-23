@@ -286,10 +286,10 @@ function renderEntity(
 ) {
   const { sy, span, onSheet } = ctx;
   const stroke = {
-    stroke: "currentColor",
-    strokeWidth: 1.5,
+    stroke: entity.color ?? "currentColor",
+    strokeWidth: entity.weight ?? 1.5,
     vectorEffect: "non-scaling-stroke" as const,
-    fill: "none",
+    fill: "none" as const,
   };
   if (entity.kind === "line") {
     const length = Math.hypot(entity.b.x - entity.a.x, entity.b.y - entity.a.y);
@@ -317,7 +317,7 @@ function renderEntity(
         key={`p-${index}`}
         d={d}
         {...stroke}
-        fill={entity.fill ? "currentColor" : "none"}
+        fill={entity.fill ? (entity.color ?? "currentColor") : "none"}
         fillOpacity={entity.fill ? 0.16 : undefined}
       />
     );
@@ -348,7 +348,7 @@ function renderEntity(
       x={entity.p.x}
       y={sy(entity.p.y)}
       fontSize={Math.max(entity.height, span / 55)}
-      fill={entity.layer === "NOTE" ? "#f87171" : "currentColor"}
+      fill={entity.layer === "NOTE" ? "#f87171" : (entity.color ?? "currentColor")}
     >
       {entity.value.slice(0, 120)}
     </text>
