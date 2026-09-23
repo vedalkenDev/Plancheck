@@ -1,17 +1,174 @@
 "use client";
 
+import { Maximize2, Minimize2, Scaling } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
 import type { DrawingExtract, GeomEntity, Point } from "@/lib/cad/extract";
+import {
+  cameraViewBox,
+  clampZoom,
+  fitCamera,
+  panCamera,
+  resizeCamera,
+  zoomCamera,
+  type Camera,
+} from "@/lib/cad/camera";
 import { arcPath, geometryBounds } from "@/lib/cad/preview";
 
 type DrawingPreviewProps = {
   extract: DrawingExtract;
   label: string;
+  fullscreen?: boolean;
+  onToggleFullscreen?: () => void;
 };
 
-export function DrawingPreview({ extract, label }: DrawingPreviewProps) {
-  const bounds = geometryBounds(extract.geometry);
+export function DrawingPreview({
+  extract,
+  label,
+  fullscreen = false,
+  onToggleFullscreen,
+}: DrawingPreviewProps) {
+  const bounds = useMemo(() => geometryBounds(extract.geometry), [extract.geometry]);
+  const hostRef = useRef<HTMLDivElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const viewSizeRef = useRef({ w: 320, h: 480 });
+  const dragRef = useRef<{ pointerId: number; x: number; y: number; camera: Camera } | null>(
+    null,
+  );
+  const [camera, setCamera] = useState<Camera | null>(() =>
+    bounds ? fitCamera(bounds, 320, 480) : null,
+  );
+  const cameraRef = useRef<Camera | null>(camera);
+  const [dragging, setDragging] = useState(false);
+  const boundsRef = useRef(bounds);
 
-  if (!bounds) {
+  useEffect(() => {
+    boundsRef.current = bounds;
+  }, [bounds]);
+
+  const apply = useCallback((next: Camera, commit = false) => {
+    cameraRef.current = next;
+    svgRef.current?.setAttribute("viewBox", cameraViewBox(next));
+    if (commit) {
+      setCamera(next);
+    }
+  }, []);
+
+  const fitToHost = useCallback(
+    (commit = true) => {
+      const frame = boundsRef.current;
+      const host = hostRef.current;
+      if (!frame || !host) {
+        return;
+      }
+      const rect = host.getBoundingClientRect();
+      if (rect.width < 2 || rect.height < 2) {
+        return;
+      }
+      viewSizeRef.current = { w: rect.width, h: rect.height };
+      apply(fitCamera(frame, rect.width, rect.height), commit);
+    },
+    [apply],
+  );
+
+  useLayoutEffect(() => {
+    const live = cameraRef.current;
+    if (live && svgRef.current) {
+      svgRef.current.setAttribute("viewBox", cameraViewBox(live));
+    }
+  });
+
+  useEffect(() => {
+    let inner = 0;
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => fitToHost());
+    });
+    return () => {
+      cancelAnimationFrame(outer);
+      cancelAnimationFrame(inner);
+    };
+  }, [fitToHost, fullscreen, label]);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) {
+      return;
+    }
+    const observer = new ResizeObserver(() => {
+      const rect = host.getBoundingClientRect();
+      const previous = viewSizeRef.current;
+      const current = cameraRef.current;
+      if (!current || rect.width < 2 || rect.height < 2) {
+        return;
+      }
+      if (Math.abs(rect.width - previous.w) < 1 && Math.abs(rect.height - previous.h) < 1) {
+        return;
+      }
+      apply(resizeCamera(current, previous.w, rect.width, rect.height));
+      viewSizeRef.current = { w: rect.width, h: rect.height };
+    });
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, [apply]);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) {
+      return;
+    }
+    function onWheel(event: WheelEvent) {
+      const current = cameraRef.current;
+      const frame = boundsRef.current;
+      if (!current || !frame || !host) {
+        return;
+      }
+      event.preventDefault();
+      const rect = host.getBoundingClientRect();
+      const factor = Math.exp(-event.deltaY * 0.0015);
+      const next = zoomCamera(
+        current,
+        factor,
+        event.clientX - rect.left,
+        event.clientY - rect.top,
+        rect.width,
+        rect.height,
+      );
+      apply(clampZoom(current, frame, next));
+    }
+    host.addEventListener("wheel", onWheel, { passive: false });
+    return () => host.removeEventListener("wheel", onWheel);
+  }, [apply]);
+
+  const scene = useMemo(() => {
+    if (!bounds) {
+      return null;
+    }
+    const span = Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY, 1);
+    const sy = (y: number) => bounds.minY + bounds.maxY - y;
+    const onSheet = (point: Point) =>
+      point.x >= bounds.minX - span &&
+      point.x <= bounds.maxX + span &&
+      point.y >= bounds.minY - span &&
+      point.y <= bounds.maxY + span;
+    return (
+      <g>
+        <rect
+          x={bounds.minX}
+          y={bounds.minY}
+          width={Math.max(bounds.maxX - bounds.minX, 1)}
+          height={Math.max(bounds.maxY - bounds.minY, 1)}
+          className="fill-card stroke-border"
+          strokeWidth={1}
+          vectorEffect="non-scaling-stroke"
+        />
+        {extract.geometry.map((entity, index) =>
+          renderEntity(entity, index, { sy, span, onSheet }),
+        )}
+      </g>
+    );
+  }, [bounds, extract.geometry]);
+
+  if (!bounds || !camera) {
     return (
       <div className="flex h-full min-h-64 flex-col justify-between rounded-lg bg-muted/30 p-4 font-mono text-xs text-muted-foreground">
         <p className="text-foreground">{label}</p>
@@ -29,43 +186,92 @@ export function DrawingPreview({ extract, label }: DrawingPreviewProps) {
     );
   }
 
-  const span = Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY, 1);
-  const pad = span * 0.08;
-  const minX = bounds.minX - pad;
-  const minY = bounds.minY - pad;
-  const width = Math.max(bounds.maxX - bounds.minX + pad * 2, 1);
-  const height = Math.max(bounds.maxY - bounds.minY + pad * 2, 1);
-  const stroke = Math.max(width, height) / 400;
-  const fy = (y: number) => minY + height - (y - minY);
-  const onSheet = (point: Point) =>
-    point.x >= bounds.minX - span &&
-    point.x <= bounds.maxX + span &&
-    point.y >= bounds.minY - span &&
-    point.y <= bounds.maxY + span;
+  function onPointerDown(event: React.PointerEvent<SVGSVGElement>) {
+    if (event.button !== 0 || !cameraRef.current) {
+      return;
+    }
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      camera: cameraRef.current,
+    };
+    setDragging(true);
+  }
+
+  function onPointerMove(event: React.PointerEvent<SVGSVGElement>) {
+    const drag = dragRef.current;
+    const host = hostRef.current;
+    if (!drag || drag.pointerId !== event.pointerId || !host) {
+      return;
+    }
+    const rect = host.getBoundingClientRect();
+    apply(
+      panCamera(
+        drag.camera,
+        event.clientX - drag.x,
+        event.clientY - drag.y,
+        rect.width,
+        rect.height,
+      ),
+    );
+  }
+
+  function endDrag(event: React.PointerEvent<SVGSVGElement>) {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) {
+      return;
+    }
+    dragRef.current = null;
+    setDragging(false);
+    if (cameraRef.current) {
+      setCamera(cameraRef.current);
+    }
+  }
 
   return (
-    <svg
-      viewBox={`${minX} ${minY} ${width} ${height}`}
-      className="h-full w-full min-h-64 text-foreground"
-      role="img"
-      aria-label={`Drawing preview of ${label}`}
+    <div
+      ref={hostRef}
+      className="relative h-full min-h-64 w-full overflow-hidden bg-muted/40"
     >
-      <rect
-        x={minX}
-        y={minY}
-        width={width}
-        height={height}
-        className="fill-muted/40"
-      />
-      {extract.geometry.map((entity, index) =>
-        renderEntity(entity, index, {
-          fy,
-          stroke,
-          span,
-          onSheet,
-        }),
-      )}
-    </svg>
+      <svg
+        ref={svgRef}
+        viewBox={cameraViewBox(camera)}
+        className={`absolute inset-0 h-full w-full touch-none text-foreground select-none ${dragging ? "cursor-grabbing" : "cursor-grab"}`}
+        role="application"
+        aria-label={`${label}. Drag to move the drawing. Scroll to zoom.`}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+        onDoubleClick={() => fitToHost()}
+      >
+        {scene}
+      </svg>
+      <div className="absolute top-2 left-2 z-10 flex gap-1">
+        <Button
+          type="button"
+          variant="secondary"
+          size="icon-sm"
+          aria-label="Fit drawing"
+          onClick={() => fitToHost()}
+        >
+          <Scaling />
+        </Button>
+        {onToggleFullscreen ? (
+          <Button
+            type="button"
+            variant="secondary"
+            size="icon-sm"
+            aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
+            onClick={onToggleFullscreen}
+          >
+            {fullscreen ? <Minimize2 /> : <Maximize2 />}
+          </Button>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -73,13 +279,18 @@ function renderEntity(
   entity: GeomEntity,
   index: number,
   ctx: {
-    fy: (y: number) => number;
-    stroke: number;
+    sy: (y: number) => number;
     span: number;
     onSheet: (point: Point) => boolean;
   },
 ) {
-  const { fy, stroke, span, onSheet } = ctx;
+  const { sy, span, onSheet } = ctx;
+  const stroke = {
+    stroke: "currentColor",
+    strokeWidth: 1.5,
+    vectorEffect: "non-scaling-stroke" as const,
+    fill: "none",
+  };
   if (entity.kind === "line") {
     const length = Math.hypot(entity.b.x - entity.a.x, entity.b.y - entity.a.y);
     if (length > span * 4 || (!onSheet(entity.a) && !onSheet(entity.b))) {
@@ -89,69 +300,47 @@ function renderEntity(
       <line
         key={`l-${index}`}
         x1={entity.a.x}
-        y1={fy(entity.a.y)}
+        y1={sy(entity.a.y)}
         x2={entity.b.x}
-        y2={fy(entity.b.y)}
-        stroke="currentColor"
-        strokeWidth={stroke}
+        y2={sy(entity.b.y)}
+        {...stroke}
       />
     );
   }
   if (entity.kind === "polyline") {
-    const d = sheetPath(entity.points, entity.closed, span, fy, onSheet);
+    const d = sheetPath(entity.points, entity.closed, span, sy, onSheet);
     if (!d) {
       return null;
     }
-    return (
-      <path
-        key={`p-${index}`}
-        d={d}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={stroke}
-      />
-    );
+    return <path key={`p-${index}`} d={d} {...stroke} />;
   }
-  if (entity.kind === "circle" || entity.kind === "arc") {
-    if (entity.r > span * 2 || !onSheet(entity.c)) {
-      return null;
-    }
+  if ((entity.kind === "circle" || entity.kind === "arc") && (entity.r > span * 2 || !onSheet(entity.c))) {
+    return null;
   }
   if (entity.kind === "circle") {
     return (
-      <circle
-        key={`c-${index}`}
-        cx={entity.c.x}
-        cy={fy(entity.c.y)}
-        r={entity.r}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={stroke}
-      />
+      <circle key={`c-${index}`} cx={entity.c.x} cy={sy(entity.c.y)} r={entity.r} {...stroke} />
     );
   }
   if (entity.kind === "arc") {
     return (
       <path
         key={`a-${index}`}
-        d={arcPath(entity.c.x, fy(entity.c.y), entity.r, entity.start, entity.end)}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={stroke}
+        d={arcPath(entity.c.x, sy(entity.c.y), entity.r, entity.start, entity.end)}
+        {...stroke}
       />
     );
   }
-  if (!onSheet(entity.p)) {
+  if (entity.kind !== "text" || !onSheet(entity.p)) {
     return null;
   }
   return (
     <text
       key={`t-${index}`}
       x={entity.p.x}
-      y={fy(entity.p.y)}
-      fontSize={Math.max(entity.height, stroke * 8)}
+      y={sy(entity.p.y)}
+      fontSize={Math.max(entity.height, span / 55)}
       fill={entity.layer === "NOTE" ? "#f87171" : "currentColor"}
-      opacity={0.9}
     >
       {entity.value.slice(0, 120)}
     </text>
@@ -162,7 +351,7 @@ function sheetPath(
   points: Point[],
   closed: boolean,
   span: number,
-  fy: (y: number) => number,
+  sy: (y: number) => number,
   onSheet: (point: Point) => boolean,
 ) {
   const source = closed && points.length ? [...points, points[0]] : points;
@@ -178,7 +367,7 @@ function sheetPath(
       open = false;
       continue;
     }
-    path += `${open ? "L" : "M"} ${point.x} ${fy(point.y)} `;
+    path += `${open ? "L" : "M"} ${point.x} ${sy(point.y)} `;
     open = true;
   }
   return path.trim();
