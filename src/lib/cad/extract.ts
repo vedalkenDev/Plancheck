@@ -10,12 +10,18 @@ export type Point = {
   y: number;
 };
 
+type Appearance = {
+  layer?: string;
+  color?: string;
+  weight?: number;
+};
+
 export type GeomEntity =
-  | { kind: "line"; layer?: string; a: Point; b: Point }
-  | { kind: "polyline"; layer?: string; closed: boolean; points: Point[] }
-  | { kind: "circle"; layer?: string; c: Point; r: number }
-  | { kind: "arc"; layer?: string; c: Point; r: number; start: number; end: number }
-  | { kind: "text"; layer?: string; p: Point; height: number; value: string };
+  | (Appearance & { kind: "line"; a: Point; b: Point })
+  | (Appearance & { kind: "polyline"; closed: boolean; points: Point[]; fill?: boolean })
+  | (Appearance & { kind: "circle"; c: Point; r: number })
+  | (Appearance & { kind: "arc"; c: Point; r: number; start: number; end: number })
+  | (Appearance & { kind: "text"; p: Point; height: number; value: string });
 
 export type DrawingExtract = {
   format: "dxf" | "dwg" | "unknown";
@@ -30,7 +36,7 @@ const JUNK =
 
 const HEX = /^[0-9A-Fa-f]{8,}$/;
 
-const TEXT_ENTITIES = new Set(["TEXT", "MTEXT", "ATTRIB", "ATTDEF", "DIMENSION"]);
+const TEXT_ENTITIES = new Set(["TEXT", "MTEXT", "ATTRIB", "ATTDEF"]);
 
 export function extractDrawing(filename: string, bytes: ArrayBuffer): DrawingExtract {
   const utf8 = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
@@ -73,6 +79,8 @@ type InsertEntity = {
   kind: "insert";
   name: string;
   layer?: string;
+  color?: string;
+  weight?: number;
   p: Point;
   sx: number;
   sy: number;
@@ -95,6 +103,7 @@ function parseDxf(content: string): DrawingExtract {
   const texts: DrawingText[] = [];
   const entityCounts: Record<string, number> = {};
   const blocks = new Map<string, BlockDef>();
+  const layers = new Map<string, { color?: number; weight?: number }>();
   const model: RawEntity[] = [];
 
   let section = "";
@@ -122,9 +131,17 @@ function parseDxf(content: string): DrawingExtract {
   let rowSpace = 0;
   let pendingX = 0;
   let points: Point[] = [];
+  let bulges: number[] = [];
+  let chunks: { code: number; value: string }[] = [];
   let hasStart = false;
   let hasEnd = false;
   let hasRadius = false;
+  let aci: number | null = null;
+  let lineweight: number | null = null;
+  let degree = 3;
+  let knots: number[] = [];
+  let fitPoints: Point[] = [];
+  let pendingFitX = 0;
 
   function resetEntity(next: string, keepPolyline: boolean) {
     entity = next;
@@ -149,10 +166,18 @@ function parseDxf(content: string): DrawingExtract {
     hasStart = false;
     hasEnd = false;
     hasRadius = false;
+    aci = null;
+    lineweight = null;
+    degree = 3;
+    knots = [];
+    fitPoints = [];
+    pendingFitX = 0;
+    chunks = [];
     if (!keepPolyline) {
       layer = "";
       flags = 0;
       points = [];
+      bulges = [];
     }
   }
 
@@ -160,12 +185,19 @@ function parseDxf(content: string): DrawingExtract {
     if (!raw || /^defpoints$/i.test(raw.layer ?? "")) {
       return;
     }
+    const known = raw.layer ? layers.get(raw.layer.toLowerCase()) : undefined;
+    const color = aciColor(aci, known?.color);
+    const weight = strokeWeight(lineweight, known?.weight);
+    const painted =
+      color || weight !== undefined
+        ? { ...raw, ...(color ? { color } : {}), ...(weight !== undefined ? { weight } : {}) }
+        : raw;
     if (openBlock && entity !== "BLOCK") {
-      openBlock.entities.push(raw);
+      openBlock.entities.push(painted);
       return;
     }
     if (section === "ENTITIES") {
-      model.push(raw);
+      model.push(painted);
     }
   }
 
@@ -173,8 +205,61 @@ function parseDxf(content: string): DrawingExtract {
     if (entity === "VERTEX") {
       entity = "POLYLINE";
     }
-    const combined = stripDxfMarkup(`${value}${extra}`).trim();
     const drawnLayer = layer || undefined;
+    if (entity === "ELLIPSE" || entity === "SOLID" || entity === "HATCH") {
+      for (const shape of shapesFrom(entity, chunks, drawnLayer)) {
+        commit(shape);
+      }
+      return;
+    }
+    const combined = stripDxfMarkup(`${value}${extra}`).trim();
+    if (entity === "DIMENSION") {
+      if (combined) {
+        texts.push({
+          kind: "text",
+          value: combined,
+          layer: drawnLayer,
+          tag: tag || undefined,
+        });
+      }
+      if (tag && findBlock(blocks, tag)) {
+        commit({
+          kind: "insert",
+          name: tag,
+          layer: drawnLayer,
+          p: { x: 0, y: 0 },
+          sx: 1,
+          sy: 1,
+          rot: 0,
+          cols: 1,
+          rows: 1,
+          colSpace: 0,
+          rowSpace: 0,
+        });
+      } else if (combined) {
+        commit({
+          kind: "text",
+          layer: drawnLayer,
+          p: { x: hasEnd ? x2 : x, y: hasEnd ? y2 : y },
+          height,
+          value: combined,
+        });
+      }
+      return;
+    }
+    if (entity === "SPLINE") {
+      const curve =
+        splinePoints(points, knots, degree) ?? (fitPoints.length >= 2 ? fitPoints : points);
+      if (curve.length >= 2) {
+        commit({
+          kind: "polyline",
+          layer: drawnLayer,
+          closed: (flags & 1) === 1,
+          points: curve,
+        });
+      }
+      return;
+    }
     if (TEXT_ENTITIES.has(entity) && combined) {
       texts.push({
         kind: entity === "MTEXT" ? "mtext" : entity === "TEXT" ? "text" : "attrib",
@@ -210,6 +295,11 @@ function parseDxf(content: string): DrawingExtract {
     }
     if (entity === "LAYER" && tag) {
       texts.push({ kind: "layer", value: tag });
+      const color = aci === null ? undefined : Math.abs(Math.trunc(aci));
+      layers.set(tag.toLowerCase(), {
+        color: color && color < 256 ? color : undefined,
+        weight: lineweight !== null && lineweight >= 0 ? lineweight : undefined,
+      });
       return;
     }
     if (entity === "LINE" && hasStart && hasEnd) {
@@ -222,14 +312,15 @@ function parseDxf(content: string): DrawingExtract {
       return;
     }
     if (
-      (entity === "LWPOLYLINE" || entity === "POLYLINE" || entity === "SPLINE") &&
+      (entity === "LWPOLYLINE" || entity === "POLYLINE") &&
       points.length >= 2
     ) {
+      const shaped = withBulges(points, bulges, (flags & 1) === 1);
       commit({
         kind: "polyline",
         layer: drawnLayer,
-        closed: (flags & 1) === 1,
-        points: points.slice(),
+        closed: shaped.closed,
+        points: shaped.points,
       });
       return;
     }
@@ -249,6 +340,10 @@ function parseDxf(content: string): DrawingExtract {
     }
     const raw = lines[i + 1] ?? "";
     i += 1;
+
+    if (code !== 0 && (entity === "HATCH" || entity === "SOLID" || entity === "ELLIPSE")) {
+      chunks.push({ code, value: raw.trim() });
+    }
 
     if (code === 0) {
       const next = raw.trim();
@@ -325,25 +420,43 @@ function parseDxf(content: string): DrawingExtract {
       }
       if (isPointList(entity)) {
         points.push({ x: pendingX, y: py });
+        bulges.push(0);
       } else {
         y = py;
         hasStart = true;
       }
     } else if (code === 11) {
-      x2 = Number.parseFloat(raw);
+      if (entity === "SPLINE") {
+        pendingFitX = Number.parseFloat(raw);
+      } else {
+        x2 = Number.parseFloat(raw);
+      }
     } else if (code === 21) {
-      y2 = Number.parseFloat(raw);
-      hasEnd = true;
+      if (entity === "SPLINE") {
+        fitPoints.push({ x: pendingFitX, y: Number.parseFloat(raw) });
+      } else {
+        y2 = Number.parseFloat(raw);
+        hasEnd = true;
+      }
     } else if (code === 40) {
       const num = Number.parseFloat(raw);
       if (entity === "CIRCLE" || entity === "ARC") {
         r = num;
         hasRadius = true;
+      } else if (entity === "SPLINE") {
+        if (Number.isFinite(num)) {
+          knots.push(num);
+        }
       } else if (Number.isFinite(num) && num > 0) {
         height = num;
       }
     } else if (code === 41 && entity === "INSERT") {
       sx = Number.parseFloat(raw) || 1;
+    } else if (code === 42 && (entity === "LWPOLYLINE" || entity === "VERTEX")) {
+      const bulge = Number.parseFloat(raw);
+      if (bulges.length && Number.isFinite(bulge)) {
+        bulges[bulges.length - 1] = bulge;
+      }
     } else if (code === 42 && entity === "INSERT") {
       sy = Number.parseFloat(raw) || 1;
     } else if (code === 44 && entity === "INSERT") {
@@ -361,14 +474,30 @@ function parseDxf(content: string): DrawingExtract {
       } else {
         flags = num;
       }
-    } else if (code === 71 && entity === "INSERT") {
-      rows = Number.parseInt(raw.trim(), 10) || 1;
+    } else if (code === 62) {
+      const num = Number.parseInt(raw.trim(), 10);
+      if (Number.isFinite(num)) {
+        aci = num;
+      }
+    } else if (code === 71) {
+      const num = Number.parseInt(raw.trim(), 10) || 0;
+      if (entity === "INSERT") {
+        rows = num || 1;
+      } else if (entity === "SPLINE" && num > 0) {
+        degree = num;
+      }
+    } else if (code === 370) {
+      const num = Number.parseInt(raw.trim(), 10);
+      if (Number.isFinite(num)) {
+        lineweight = num;
+      }
     }
   }
   flush();
 
   const placed = placeInserts(model, blocks);
-  const geometry = placed.some(isDrawn) ? placed : modelSpaceFallback(blocks);
+  const fallback = placed.some(isDrawn) ? placed : modelSpaceFallback(blocks);
+  const geometry = fallback.length ? fallback : placed;
 
   return {
     format: "dxf",
@@ -386,6 +515,508 @@ function isPointList(entity: string) {
     entity === "VERTEX" ||
     entity === "SPLINE"
   );
+}
+
+function shapesFrom(
+  entity: string,
+  pairs: { code: number; value: string }[],
+  layer?: string,
+): GeomEntity[] {
+  if (entity === "ELLIPSE") {
+    const ellipse = ellipseFrom(pairs, layer);
+    return ellipse ? [ellipse] : [];
+  }
+  if (entity === "SOLID") {
+    const solid = solidFrom(pairs, layer);
+    return solid ? [solid] : [];
+  }
+  if (entity === "HATCH") {
+    return hatchFrom(pairs, layer);
+  }
+  return [];
+}
+
+function ellipseFrom(
+  pairs: { code: number; value: string }[],
+  layer?: string,
+): GeomEntity | null {
+  let cx = 0;
+  let cy = 0;
+  let mx = 0;
+  let my = 0;
+  let ratio = 1;
+  let start = 0;
+  let end = Math.PI * 2;
+  let hasMajor = false;
+  for (const pair of pairs) {
+    if (pair.code === 10) {
+      cx = dxfNum(pair.value);
+    } else if (pair.code === 20) {
+      cy = dxfNum(pair.value);
+    } else if (pair.code === 11) {
+      mx = dxfNum(pair.value);
+      hasMajor = true;
+    } else if (pair.code === 21) {
+      my = dxfNum(pair.value);
+    } else if (pair.code === 40) {
+      ratio = dxfNum(pair.value) || 1;
+    } else if (pair.code === 41) {
+      start = dxfNum(pair.value);
+    } else if (pair.code === 42) {
+      end = dxfNum(pair.value);
+    }
+  }
+  if (!hasMajor) {
+    return null;
+  }
+  const points = sampleEllipse({ x: cx, y: cy }, { x: mx, y: my }, ratio, start, end);
+  if (points.length < 2) {
+    return null;
+  }
+  const sweep = Math.abs(end - start);
+  const full = sweep < 1e-4 || Math.abs(sweep - Math.PI * 2) < 1e-3;
+  return { kind: "polyline", layer, closed: full, points };
+}
+
+function sampleEllipse(center: Point, major: Point, ratio: number, start: number, end: number) {
+  const rx = Math.hypot(major.x, major.y);
+  if (rx < 1e-9) {
+    return [];
+  }
+  const rot = Math.atan2(major.y, major.x);
+  const ry = rx * ratio;
+  let sweep = end - start;
+  if (sweep <= 1e-6) {
+    sweep += Math.PI * 2;
+  }
+  const steps = Math.max(12, Math.ceil((48 * sweep) / (Math.PI * 2)));
+  const points: Point[] = [];
+  const cos = Math.cos(rot);
+  const sin = Math.sin(rot);
+  for (let i = 0; i <= steps; i += 1) {
+    const t = start + (sweep * i) / steps;
+    const x = rx * Math.cos(t);
+    const y = ry * Math.sin(t);
+    points.push({
+      x: center.x + x * cos - y * sin,
+      y: center.y + x * sin + y * cos,
+    });
+  }
+  return points;
+}
+
+function solidFrom(
+  pairs: { code: number; value: string }[],
+  layer?: string,
+): GeomEntity | null {
+  const xs = new Map<number, number>();
+  const ys = new Map<number, number>();
+  for (const pair of pairs) {
+    if (pair.code >= 10 && pair.code <= 13) {
+      xs.set(pair.code, dxfNum(pair.value));
+    } else if (pair.code >= 20 && pair.code <= 23) {
+      ys.set(pair.code - 10, dxfNum(pair.value));
+    }
+  }
+  const corner = (code: number) =>
+    xs.has(code) && ys.has(code) ? { x: xs.get(code) ?? 0, y: ys.get(code) ?? 0 } : null;
+  const first = corner(10);
+  const second = corner(11);
+  const third = corner(12);
+  const fourth = corner(13);
+  if (!first || !second || !third) {
+    return null;
+  }
+  const distinctFourth =
+    fourth !== null && Math.hypot(fourth.x - third.x, fourth.y - third.y) > 1e-6;
+  return {
+    kind: "polyline",
+    layer,
+    closed: true,
+    fill: true,
+    points: distinctFourth ? [first, second, fourth, third] : [first, second, third],
+  };
+}
+
+function hatchFrom(pairs: { code: number; value: string }[], layer?: string) {
+  const solid = pairs.some((pair) => pair.code === 70 && dxfNum(pair.value) === 1);
+  const out: GeomEntity[] = [];
+  let index = pairs.findIndex((pair) => pair.code === 91);
+  if (index < 0) {
+    return out;
+  }
+  const paths = dxfNum(pairs[index]?.value ?? "");
+  index += 1;
+  for (let path = 0; path < paths && index < pairs.length; path += 1) {
+    while (index < pairs.length && pairs[index]?.code !== 92) {
+      index += 1;
+    }
+    if (index >= pairs.length) {
+      break;
+    }
+    const flag = dxfNum(pairs[index]?.value ?? "");
+    index += 1;
+    if ((flag & 2) === 2) {
+      let hasBulge = false;
+      let closed = true;
+      while (index < pairs.length && pairs[index]?.code !== 93) {
+        if (pairs[index]?.code === 72) {
+          hasBulge = dxfNum(pairs[index]?.value ?? "") === 1;
+        }
+        if (pairs[index]?.code === 73) {
+          closed = dxfNum(pairs[index]?.value ?? "") === 1;
+        }
+        index += 1;
+      }
+      if (index >= pairs.length) {
+        break;
+      }
+      const count = dxfNum(pairs[index]?.value ?? "");
+      index += 1;
+      const points: Point[] = [];
+      const bulges: number[] = [];
+      for (let vertex = 0; vertex < count && index < pairs.length; vertex += 1) {
+        let x: number | null = null;
+        let y: number | null = null;
+        let bulge = 0;
+        while (index < pairs.length) {
+          const pair = pairs[index];
+          if (!pair || pair.code === 92 || pair.code === 93) {
+            break;
+          }
+          index += 1;
+          if (pair.code === 10) {
+            x = dxfNum(pair.value);
+          } else if (pair.code === 20 && x !== null) {
+            y = dxfNum(pair.value);
+            if (!hasBulge) {
+              break;
+            }
+          } else if (pair.code === 42 && y !== null) {
+            bulge = dxfNum(pair.value);
+            break;
+          }
+        }
+        if (x !== null && y !== null) {
+          points.push({ x, y });
+          bulges.push(bulge);
+        }
+      }
+      const shaped = withBulges(points, bulges, closed);
+      if (shaped.points.length >= 2) {
+        out.push({
+          kind: "polyline",
+          layer,
+          closed: shaped.closed,
+          points: shaped.points,
+          fill: solid && shaped.closed,
+        });
+      }
+    } else {
+      while (index < pairs.length && pairs[index]?.code !== 93) {
+        index += 1;
+      }
+      if (index >= pairs.length) {
+        break;
+      }
+      const edges = dxfNum(pairs[index]?.value ?? "");
+      index += 1;
+      for (let edge = 0; edge < edges && index < pairs.length; edge += 1) {
+        while (index < pairs.length && pairs[index]?.code !== 72 && pairs[index]?.code !== 92) {
+          index += 1;
+        }
+        if (index >= pairs.length || pairs[index]?.code !== 72) {
+          break;
+        }
+        const type = dxfNum(pairs[index]?.value ?? "");
+        index += 1;
+        const bag: { code: number; value: string }[] = [];
+        while (
+          index < pairs.length &&
+          pairs[index]?.code !== 72 &&
+          pairs[index]?.code !== 92 &&
+          pairs[index]?.code !== 97
+        ) {
+          const pair = pairs[index];
+          if (pair) {
+            bag.push(pair);
+          }
+          index += 1;
+        }
+        const drawn = hatchEdge(type, bag, layer);
+        if (drawn) {
+          out.push(drawn);
+        }
+      }
+    }
+  }
+  return out;
+}
+
+function hatchEdge(
+  type: number,
+  pairs: { code: number; value: string }[],
+  layer?: string,
+): GeomEntity | null {
+  const value = (code: number) => dxfNum(pairs.find((pair) => pair.code === code)?.value ?? "");
+  if (type === 1) {
+    return {
+      kind: "line",
+      layer,
+      a: { x: value(10), y: value(20) },
+      b: { x: value(11), y: value(21) },
+    };
+  }
+  if (type === 2) {
+    let start = value(50);
+    let end = value(51);
+    const ccw = pairs.find((pair) => pair.code === 73);
+    if (ccw && dxfNum(ccw.value) === 0) {
+      const swap = start;
+      start = end;
+      end = swap;
+    }
+    return {
+      kind: "arc",
+      layer,
+      c: { x: value(10), y: value(20) },
+      r: value(40),
+      start,
+      end,
+    };
+  }
+  return null;
+}
+
+function withBulges(points: Point[], bulges: number[], closed: boolean) {
+  const curved = bulges.some((bulge) => Math.abs(bulge) > 1e-8);
+  if (!curved || points.length < 2) {
+    return { points, closed };
+  }
+  const verts = points.map((point, index) => ({
+    x: point.x,
+    y: point.y,
+    bulge: bulges[index] ?? 0,
+  }));
+  if (closed) {
+    verts.push({ x: verts[0].x, y: verts[0].y, bulge: 0 });
+  }
+  const out: Point[] = [];
+  for (let i = 0; i < verts.length - 1; i += 1) {
+    out.push({ x: verts[i].x, y: verts[i].y });
+    if (Math.abs(verts[i].bulge) > 1e-8) {
+      out.push(...arcPoints(verts[i], verts[i + 1], verts[i].bulge));
+    }
+  }
+  out.push({ x: verts[verts.length - 1].x, y: verts[verts.length - 1].y });
+  const looped =
+    closed &&
+    out.length > 1 &&
+    Math.hypot(out[0].x - out[out.length - 1].x, out[0].y - out[out.length - 1].y) < 1e-6;
+  return { points: looped ? out.slice(0, -1) : out, closed: looped };
+}
+
+function arcPoints(from: Point, to: Point, bulge: number) {
+  const theta = Math.atan(Math.abs(bulge)) * 4;
+  const start = bulge < 0 ? from : to;
+  const end = bulge < 0 ? to : from;
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const length = Math.hypot(dx, dy);
+  if (length < 1e-9 || theta < 1e-6) {
+    return [];
+  }
+  const offset = Math.abs(length / 2 / Math.tan(theta / 2));
+  const nx = -dy / length;
+  const ny = dx / length;
+  const side = theta < Math.PI ? -1 : 1;
+  const cx = (start.x + end.x) / 2 + nx * offset * side;
+  const cy = (start.y + end.y) / 2 + ny * offset * side;
+  const fromAngle = Math.atan2(end.y - cy, end.x - cx);
+  let toAngle = Math.atan2(start.y - cy, start.x - cx);
+  if (toAngle < fromAngle) {
+    toAngle += Math.PI * 2;
+  }
+  const radius = Math.hypot(end.x - cx, end.y - cy);
+  const steps = Math.max(4, Math.ceil((toAngle - fromAngle) / (Math.PI / 18)));
+  const points: Point[] = [];
+  for (let i = 1; i < steps; i += 1) {
+    const angle = fromAngle + ((toAngle - fromAngle) * i) / steps;
+    points.push({
+      x: cx + radius * Math.cos(angle),
+      y: cy + radius * Math.sin(angle),
+    });
+  }
+  if (bulge < 0) {
+    points.reverse();
+  }
+  return points;
+}
+
+function dxfNum(value: string) {
+  const number = Number.parseFloat(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function aciColor(entityAci: number | null, layerAci: number | undefined) {
+  const picked =
+    entityAci === null || Math.abs(entityAci) === 256 ? layerAci : Math.abs(Math.trunc(entityAci));
+  if (picked === undefined) {
+    return undefined;
+  }
+  const index = Math.abs(Math.trunc(picked));
+  if (index === 0 || index === 7 || index >= 256) {
+    return undefined;
+  }
+  return aciHex(index);
+}
+
+function strokeWeight(entityWeight: number | null, layerWeight: number | undefined) {
+  const hundredths =
+    entityWeight === null || entityWeight === -1
+      ? layerWeight
+      : entityWeight >= 0
+        ? entityWeight
+        : undefined;
+  if (hundredths === undefined || hundredths < 0) {
+    return undefined;
+  }
+  return Math.min(3.2, Math.max(0.75, hundredths / 30));
+}
+
+const ACI_BASIC = [
+  "#ff0000",
+  "#ffff00",
+  "#00ff00",
+  "#00ffff",
+  "#0000ff",
+  "#ff00ff",
+  "#ffffff",
+  "#808080",
+  "#c0c0c0",
+];
+
+const ACI_HUES: ReadonlyArray<readonly [number, number, number]> = [
+  [255, 0, 0],
+  [255, 63, 0],
+  [255, 127, 0],
+  [255, 191, 0],
+  [255, 255, 0],
+  [191, 255, 0],
+  [127, 255, 0],
+  [63, 255, 0],
+  [0, 255, 0],
+  [0, 255, 63],
+  [0, 255, 127],
+  [0, 255, 191],
+  [0, 255, 255],
+  [0, 191, 255],
+  [0, 127, 255],
+  [0, 63, 255],
+  [0, 0, 255],
+  [63, 0, 255],
+  [127, 0, 255],
+  [191, 0, 255],
+  [255, 0, 255],
+  [255, 0, 191],
+  [255, 0, 127],
+  [255, 0, 63],
+];
+
+function aciHex(index: number) {
+  if (index >= 1 && index <= 9) {
+    return ACI_BASIC[index - 1];
+  }
+  if (index >= 250 && index <= 255) {
+    const gray = [51, 91, 132, 173, 214, 255][index - 250];
+    return rgbHex(gray, gray, gray);
+  }
+  if (index < 10 || index > 249) {
+    return undefined;
+  }
+  const group = index - 10;
+  const hue = ACI_HUES[Math.floor(group / 10)];
+  const scale = [255, 204, 153, 127, 76][Math.floor((group % 10) / 2)];
+  const max = Math.max(hue[0], hue[1], hue[2]);
+  const tint = group % 2 === 1;
+  const scaled = hue.map((channel) =>
+    Math.round(((tint && channel === 0 ? max / 2 : channel) * scale) / 255),
+  );
+  return rgbHex(scaled[0], scaled[1], scaled[2]);
+}
+
+function rgbHex(r: number, g: number, b: number) {
+  return `#${[r, g, b].map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function splinePoints(controls: Point[], knots: number[], degree: number) {
+  const count = controls.length;
+  const p = Math.trunc(degree);
+  if (count < 2 || p < 1 || p >= count) {
+    return null;
+  }
+  const u = knots.length >= count + p + 1 ? knots : clampedKnots(count, p);
+  const from = u[p];
+  const to = u[count];
+  if (!Number.isFinite(from) || !Number.isFinite(to) || to - from < 1e-9) {
+    return null;
+  }
+  const steps = Math.max(24, (count - p) * 8);
+  const points: Point[] = [];
+  for (let i = 0; i <= steps; i += 1) {
+    const t = i === steps ? to : from + ((to - from) * i) / steps;
+    const point = deBoor(controls, u, p, t);
+    if (!point) {
+      return null;
+    }
+    points.push(point);
+  }
+  return points;
+}
+
+function clampedKnots(count: number, degree: number) {
+  const knots: number[] = [];
+  for (let i = 0; i < count + degree + 1; i += 1) {
+    if (i <= degree) {
+      knots.push(0);
+    } else if (i >= count) {
+      knots.push(1);
+    } else {
+      knots.push((i - degree) / (count - degree));
+    }
+  }
+  return knots;
+}
+
+function deBoor(controls: Point[], knots: number[], degree: number, t: number) {
+  const count = controls.length;
+  let span = count - 1;
+  if (t < knots[count] - 1e-12) {
+    span = degree;
+    while (span < count - 1 && t >= knots[span + 1]) {
+      span += 1;
+    }
+  }
+  const d: Point[] = [];
+  for (let j = 0; j <= degree; j += 1) {
+    const control = controls[span - degree + j];
+    if (!control) {
+      return null;
+    }
+    d.push({ x: control.x, y: control.y });
+  }
+  for (let r = 1; r <= degree; r += 1) {
+    for (let j = degree; j >= r; j -= 1) {
+      const i = span - degree + j;
+      const denom = knots[i + degree - r + 1] - knots[i];
+      const alpha = Math.abs(denom) < 1e-12 ? 0 : (t - knots[i]) / denom;
+      d[j] = {
+        x: (1 - alpha) * d[j - 1].x + alpha * d[j].x,
+        y: (1 - alpha) * d[j - 1].y + alpha * d[j].y,
+      };
+    }
+  }
+  return d[degree];
 }
 
 function isDrawn(entity: GeomEntity) {
