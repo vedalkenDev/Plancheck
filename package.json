@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start --port 43173 --hostname 127.0.0.1",
     "lint": "eslint",
-    "test": "tsx --test src/lib/cad/audit-from-drawing.test.ts src/lib/cad/camera.test.ts src/lib/cad/dwg-to-dxf.test.ts src/lib/cad/extract.test.ts src/lib/cad/preview.test.ts src/lib/checklist.test.ts"
+    "test": "tsx --test src/lib/cad/audit-from-drawing.test.ts src/lib/cad/camera.test.ts src/lib/cad/dwg-to-dxf.test.ts src/lib/cad/extract.test.ts src/lib/cad/preview.test.ts src/lib/checklist.test.ts src/lib/theme-phase.test.ts"
   },
   "dependencies": {
     "@mlightcad/libredwg-web": "^0.7.14",

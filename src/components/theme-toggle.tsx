@@ -8,9 +8,19 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { phaseThemeChange } from "@/lib/theme-phase";
 
 export function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
+
+  function toggleTheme() {
+    const next = resolvedTheme === "light" ? "dark" : "light";
+    phaseThemeChange(() => {
+      document.documentElement.classList.toggle("dark", next === "dark");
+      document.documentElement.style.colorScheme = next;
+      setTheme(next);
+    });
+  }
 
   return (
     <Tooltip>
@@ -20,10 +30,12 @@ export function ThemeToggle() {
           variant="outline"
           size="icon"
           aria-label="Toggle dark and light mode"
-          onClick={() => setTheme(resolvedTheme === "light" ? "dark" : "light")}
+          onClick={toggleTheme}
         >
-          <Sun className="hidden dark:block" />
-          <Moon className="dark:hidden" />
+          <span className="grid size-4 place-items-center">
+            <Sun className="col-start-1 row-start-1 opacity-100 dark:opacity-0" />
+            <Moon className="col-start-1 row-start-1 opacity-0 dark:opacity-100" />
+          </span>
         </Button>
       </TooltipTrigger>
       <TooltipContent>Dark / light mode</TooltipContent>
