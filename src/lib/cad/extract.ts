@@ -14,14 +14,29 @@ type Appearance = {
   layer?: string;
   color?: string;
   weight?: number;
+  dash?: number[];
 };
 
 export type GeomEntity =
   | (Appearance & { kind: "line"; a: Point; b: Point })
-  | (Appearance & { kind: "polyline"; closed: boolean; points: Point[]; fill?: boolean })
+  | (Appearance & {
+      kind: "polyline";
+      closed: boolean;
+      points: Point[];
+      fill?: boolean;
+      pattern?: number;
+    })
   | (Appearance & { kind: "circle"; c: Point; r: number })
   | (Appearance & { kind: "arc"; c: Point; r: number; start: number; end: number })
-  | (Appearance & { kind: "text"; p: Point; height: number; value: string });
+  | (Appearance & {
+      kind: "text";
+      p: Point;
+      height: number;
+      value: string;
+      rotation?: number;
+      align?: "left" | "center" | "right";
+      valign?: "baseline" | "middle" | "top";
+    });
 
 export type DrawingExtract = {
   format: "dxf" | "dwg" | "unknown";
@@ -103,8 +118,11 @@ function parseDxf(content: string): DrawingExtract {
   const texts: DrawingText[] = [];
   const entityCounts: Record<string, number> = {};
   const blocks = new Map<string, BlockDef>();
-  const layers = new Map<string, { color?: number; weight?: number }>();
+  const layers = new Map<string, { color?: number; weight?: number; lineType?: string }>();
+  const lineTypes = new Map<string, number[]>();
   const model: RawEntity[] = [];
+  let headerVar = "";
+  let ltScale = 1;
 
   let section = "";
   let expectSection = false;
@@ -142,6 +160,13 @@ function parseDxf(content: string): DrawingExtract {
   let knots: number[] = [];
   let fitPoints: Point[] = [];
   let pendingFitX = 0;
+  let lineType = "";
+  let lineTypeScale = 1;
+  let dashItems: number[] = [];
+  let hAlign = 0;
+  let vAlign = 0;
+  let attach = 0;
+  let textRot: number | null = null;
 
   function resetEntity(next: string, keepPolyline: boolean) {
     entity = next;
@@ -172,6 +197,13 @@ function parseDxf(content: string): DrawingExtract {
     knots = [];
     fitPoints = [];
     pendingFitX = 0;
+    lineType = "";
+    lineTypeScale = 1;
+    dashItems = [];
+    hAlign = 0;
+    vAlign = 0;
+    attach = 0;
+    textRot = null;
     chunks = [];
     if (!keepPolyline) {
       layer = "";
@@ -188,9 +220,15 @@ function parseDxf(content: string): DrawingExtract {
     const known = raw.layer ? layers.get(raw.layer.toLowerCase()) : undefined;
     const color = aciColor(aci, known?.color);
     const weight = strokeWeight(lineweight, known?.weight);
+    const dash = resolveDash(lineType, known?.lineType, lineTypes, lineTypeScale * ltScale);
     const painted =
-      color || weight !== undefined
-        ? { ...raw, ...(color ? { color } : {}), ...(weight !== undefined ? { weight } : {}) }
+      color || weight !== undefined || dash
+        ? {
+            ...raw,
+            ...(color ? { color } : {}),
+            ...(weight !== undefined ? { weight } : {}),
+            ...(dash ? { dash } : {}),
+          }
         : raw;
     if (openBlock && entity !== "BLOCK") {
       openBlock.entities.push(painted);
@@ -267,12 +305,17 @@ function parseDxf(content: string): DrawingExtract {
         layer: drawnLayer,
         tag: tag || undefined,
       });
+      const placed = textPlacement(entity, { x, y }, { x: x2, y: y2 }, hasEnd, hAlign, vAlign, attach);
+      const rotation = textAngle(entity, textRot);
       commit({
         kind: "text",
         layer: drawnLayer,
-        p: { x, y },
+        p: placed.p,
         height,
         value: combined,
+        ...(rotation ? { rotation } : {}),
+        ...(placed.align ? { align: placed.align } : {}),
+        ...(placed.valign ? { valign: placed.valign } : {}),
       });
       return;
     }
@@ -299,6 +342,22 @@ function parseDxf(content: string): DrawingExtract {
       layers.set(tag.toLowerCase(), {
         color: color && color < 256 ? color : undefined,
         weight: lineweight !== null && lineweight >= 0 ? lineweight : undefined,
+        lineType: lineType || undefined,
+      });
+      return;
+    }
+    if (entity === "LTYPE" && tag) {
+      if (dashItems.length) {
+        lineTypes.set(tag.toLowerCase(), dashItems.slice());
+      }
+      return;
+    }
+    if (entity === "LEADER" && points.length >= 2) {
+      commit({
+        kind: "polyline",
+        layer: drawnLayer,
+        closed: false,
+        points,
       });
       return;
     }
@@ -394,6 +453,10 @@ function parseDxf(content: string): DrawingExtract {
       extra += raw;
     } else if (code === 8) {
       layer = raw.trim();
+    } else if (code === 6) {
+      lineType = raw.trim();
+    } else if (code === 9) {
+      headerVar = raw.trim().toUpperCase();
     } else if (code === 2) {
       const name = raw.trim();
       if (entity === "BLOCK" && openBlock) {
@@ -438,6 +501,11 @@ function parseDxf(content: string): DrawingExtract {
         y2 = Number.parseFloat(raw);
         hasEnd = true;
       }
+    } else if (code === 40 && section === "HEADER" && headerVar === "$LTSCALE") {
+      const num = Number.parseFloat(raw);
+      if (Number.isFinite(num) && num > 0) {
+        ltScale = num;
+      }
     } else if (code === 40) {
       const num = Number.parseFloat(raw);
       if (entity === "CIRCLE" || entity === "ARC") {
@@ -463,8 +531,23 @@ function parseDxf(content: string): DrawingExtract {
       colSpace = Number.parseFloat(raw) || 0;
     } else if (code === 45 && entity === "INSERT") {
       rowSpace = Number.parseFloat(raw) || 0;
+    } else if (code === 48) {
+      const num = Number.parseFloat(raw);
+      if (Number.isFinite(num) && num > 0) {
+        lineTypeScale = num;
+      }
+    } else if (code === 49 && entity === "LTYPE") {
+      const num = Number.parseFloat(raw);
+      if (Number.isFinite(num)) {
+        dashItems.push(num);
+      }
     } else if (code === 50) {
-      start = Number.parseFloat(raw);
+      const num = Number.parseFloat(raw);
+      if (TEXT_ENTITIES.has(entity)) {
+        textRot = num;
+      } else {
+        start = num;
+      }
     } else if (code === 51) {
       end = Number.parseFloat(raw);
     } else if (code === 70) {
@@ -483,9 +566,15 @@ function parseDxf(content: string): DrawingExtract {
       const num = Number.parseInt(raw.trim(), 10) || 0;
       if (entity === "INSERT") {
         rows = num || 1;
+      } else if (entity === "MTEXT") {
+        attach = num;
       } else if (entity === "SPLINE" && num > 0) {
         degree = num;
       }
+    } else if (code === 72 && (entity === "TEXT" || entity === "ATTRIB" || entity === "ATTDEF")) {
+      hAlign = Number.parseInt(raw.trim(), 10) || 0;
+    } else if (code === 73 && (entity === "TEXT" || entity === "ATTRIB" || entity === "ATTDEF")) {
+      vAlign = Number.parseInt(raw.trim(), 10) || 0;
     } else if (code === 370) {
       const num = Number.parseInt(raw.trim(), 10);
       if (Number.isFinite(num)) {
@@ -513,7 +602,8 @@ function isPointList(entity: string) {
     entity === "LWPOLYLINE" ||
     entity === "POLYLINE" ||
     entity === "VERTEX" ||
-    entity === "SPLINE"
+    entity === "SPLINE" ||
+    entity === "LEADER"
   );
 }
 
@@ -704,12 +794,16 @@ function hatchFrom(pairs: { code: number; value: string }[], layer?: string) {
       }
       const shaped = withBulges(points, bulges, closed);
       if (shaped.points.length >= 2) {
+        const angle = pairs.find((pair) => pair.code === 52);
         out.push({
           kind: "polyline",
           layer,
           closed: shaped.closed,
           points: shaped.points,
-          fill: solid && shaped.closed,
+          ...(solid && shaped.closed ? { fill: true } : {}),
+          ...(solid || !shaped.closed
+            ? {}
+            : { pattern: angle ? dxfNum(angle.value) : 45 }),
         });
       }
     } else {
@@ -851,6 +945,74 @@ function arcPoints(from: Point, to: Point, bulge: number) {
     points.reverse();
   }
   return points;
+}
+
+const STOCK_DASH: Record<string, number[]> = {
+  dashed: [12, -6],
+  dashed2: [6, -3],
+  hidden: [6, -3],
+  hidden2: [3, -1.5],
+  center: [20, -4, 4, -4],
+  center2: [12, -3, 3, -3],
+  phantom: [20, -4, 4, -4, 4, -4],
+  dot: [0, -6],
+  divide: [12, -4, 0, -4, 0, -4],
+};
+
+function resolveDash(
+  entityType: string,
+  layerType: string | undefined,
+  defined: Map<string, number[]>,
+  scale: number,
+) {
+  const requested = entityType.trim().toLowerCase();
+  const name =
+    !requested || requested === "bylayer" ? (layerType ?? "").toLowerCase() : requested;
+  if (!name || name === "continuous" || name === "bylayer" || name === "byblock") {
+    return undefined;
+  }
+  const pattern = defined.get(name) ?? STOCK_DASH[name];
+  if (!pattern?.length) {
+    return undefined;
+  }
+  const factor = scale > 0 ? scale : 1;
+  return pattern.map((part) => part * factor);
+}
+
+function textPlacement(
+  entity: string,
+  insert: Point,
+  alignPoint: Point,
+  hasAlignPoint: boolean,
+  hAlign: number,
+  vAlign: number,
+  attach: number,
+) {
+  if (entity === "MTEXT" && attach >= 1 && attach <= 9) {
+    const column = (attach - 1) % 3;
+    const row = Math.floor((attach - 1) / 3);
+    return {
+      p: insert,
+      align: column === 1 ? ("center" as const) : column === 2 ? ("right" as const) : undefined,
+      valign: row === 0 ? ("top" as const) : row === 1 ? ("middle" as const) : undefined,
+    };
+  }
+  const aligned = (hAlign !== 0 || vAlign !== 0) && hasAlignPoint;
+  return {
+    p: aligned ? alignPoint : insert,
+    align:
+      hAlign === 1 || hAlign === 4 ? ("center" as const) : hAlign === 2 ? ("right" as const) : undefined,
+    valign:
+      hAlign === 4 || vAlign === 2 ? ("middle" as const) : vAlign === 3 ? ("top" as const) : undefined,
+  };
+}
+
+function textAngle(entity: string, rotation: number | null) {
+  if (rotation === null || !Number.isFinite(rotation)) {
+    return 0;
+  }
+  const degrees = entity === "MTEXT" ? (rotation * 180) / Math.PI : rotation;
+  return Math.abs(degrees) < 1e-6 ? 0 : degrees;
 }
 
 function dxfNum(value: string) {

@@ -710,6 +710,169 @@ EOF
   });
 });
 
+describe("sheet graphics", () => {
+  it("dashes a hidden line and keeps a leader", () => {
+    const extract = fromText(`
+0
+SECTION
+2
+TABLES
+0
+LTYPE
+2
+HIDDEN
+49
+0.5
+49
+-0.25
+0
+LAYER
+2
+WALL
+6
+HIDDEN
+0
+ENDSEC
+0
+SECTION
+2
+ENTITIES
+0
+LINE
+8
+WALL
+10
+0.0
+20
+0.0
+11
+10.0
+21
+0.0
+0
+LEADER
+8
+NOTE
+10
+0.0
+20
+2.0
+10
+4.0
+20
+4.0
+10
+8.0
+20
+4.0
+0
+ENDSEC
+0
+EOF
+`);
+    const line = extract.geometry.find((entity) => entity.kind === "line");
+    assert.ok(line && line.kind === "line");
+    assert.deepEqual(line.dash, [0.5, -0.25]);
+    const leader = extract.geometry.find((entity) => entity.kind === "polyline");
+    assert.ok(leader && leader.kind === "polyline");
+    assert.equal(leader.points.length, 3);
+    assert.equal(leader.closed, false);
+  });
+
+  it("centers rotated text on its alignment point", () => {
+    const extract = fromText(`
+0
+SECTION
+2
+ENTITIES
+0
+TEXT
+8
+ROOM
+10
+0.0
+20
+0.0
+11
+5.0
+21
+6.0
+40
+2.0
+50
+90.0
+72
+1
+1
+Kitchen
+0
+ENDSEC
+0
+EOF
+`);
+    const label = extract.geometry.find((entity) => entity.kind === "text");
+    assert.ok(label && label.kind === "text");
+    assert.equal(label.value, "Kitchen");
+    assert.ok(Math.abs(label.p.x - 5) < 0.01);
+    assert.ok(Math.abs(label.p.y - 6) < 0.01);
+    assert.equal(label.align, "center");
+    assert.ok(label.rotation !== undefined && Math.abs(label.rotation - 90) < 0.01);
+  });
+
+  it("marks a pattern hatch with its angle", () => {
+    const extract = fromText(`
+0
+SECTION
+2
+ENTITIES
+0
+HATCH
+8
+EARTH
+2
+ANSI31
+52
+45.0
+70
+0
+91
+1
+92
+7
+72
+0
+73
+1
+93
+4
+10
+0.0
+20
+0.0
+10
+4.0
+20
+0.0
+10
+4.0
+20
+2.0
+10
+0.0
+20
+2.0
+0
+ENDSEC
+0
+EOF
+`);
+    const hatch = extract.geometry.find((entity) => entity.kind === "polyline");
+    assert.ok(hatch && hatch.kind === "polyline");
+    assert.equal(hatch.fill, undefined);
+    assert.equal(hatch.pattern, 45);
+  });
+});
+
 describe("sample drawings", () => {
   it("still frames the marine drive site", () => {
     const bytes = readFileSync("public/samples/marine-drive.dxf");
