@@ -1000,6 +1000,41 @@ EOF
   });
 });
 
+describe("mtext columns", () => {
+  it("keeps paragraph breaks and the column width", () => {
+    const extract = fromText(`0
+SECTION
+2
+ENTITIES
+0
+MTEXT
+8
+Text
+10
+10.0
+20
+20.0
+40
+2.0
+41
+40.0
+3
+First part of the note
+1
+\\PSecond part that stays
+0
+ENDSEC
+0
+EOF
+`);
+    const note = extract.geometry.find((entity) => entity.kind === "text");
+    assert.ok(note && note.kind === "text");
+    assert.equal(note.width, 40);
+    assert.equal(note.value, "First part of the note\nSecond part that stays");
+    assert.ok(extract.strings.some((line) => line.includes("First part of the note Second part")));
+  });
+});
+
 describe("sample drawings", () => {
   it("still frames the marine drive site", () => {
     const bytes = readFileSync("public/samples/marine-drive.dxf");

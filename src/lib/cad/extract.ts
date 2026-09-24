@@ -36,6 +36,7 @@ export type GeomEntity =
       rotation?: number;
       align?: "left" | "center" | "right";
       valign?: "baseline" | "middle" | "top";
+      width?: number;
     });
 
 export type DrawingExtract = {
@@ -159,6 +160,7 @@ function parseDxf(content: string): DrawingExtract {
   let start = 0;
   let end = 0;
   let height = 2.5;
+  let column = 0;
   let flags = 0;
   let sx = 1;
   let sy = 1;
@@ -200,6 +202,7 @@ function parseDxf(content: string): DrawingExtract {
     start = 0;
     end = 0;
     height = 2.5;
+    column = 0;
     sx = 1;
     sy = 1;
     cols = 1;
@@ -278,7 +281,7 @@ function parseDxf(content: string): DrawingExtract {
       }
       return;
     }
-    const combined = stripDxfMarkup(`${value}${extra}`).trim();
+    const combined = stripDxfMarkup(entity === "MTEXT" ? `${extra}${value}` : `${value}${extra}`).trim();
     if (entity === "DIMENSION") {
       if (combined) {
         texts.push({
@@ -341,6 +344,7 @@ function parseDxf(content: string): DrawingExtract {
         p: placed.p,
         height,
         value: combined,
+        ...(column > 0 ? { width: column } : {}),
         ...(rotation ? { rotation } : {}),
         ...(placed.align ? { align: placed.align } : {}),
         ...(placed.valign ? { valign: placed.valign } : {}),
@@ -557,6 +561,11 @@ function parseDxf(content: string): DrawingExtract {
       } else if (Number.isFinite(num) && num > 0) {
         height = num;
       }
+    } else if (code === 41 && entity === "MTEXT") {
+      const num = Number.parseFloat(raw);
+      if (Number.isFinite(num) && num > 0) {
+        column = num;
+      }
     } else if (code === 41 && entity === "INSERT") {
       sx = Number.parseFloat(raw) || 1;
     } else if (code === 42 && (entity === "LWPOLYLINE" || entity === "VERTEX")) {
@@ -634,7 +643,7 @@ function parseDxf(content: string): DrawingExtract {
   return {
     format: "dxf",
     texts,
-    strings: uniqueStrings(texts.map((item) => item.value)),
+    strings: uniqueStrings(texts.map((item) => item.value.replace(/\s+/g, " "))),
     entityCounts,
     geometry,
   };
@@ -1316,6 +1325,7 @@ function ontoSheet(entity: GeomEntity, viewport: SheetViewport, scale: number): 
       ...painted,
       p: map(painted.p),
       height: painted.height * scale,
+      ...(painted.width !== undefined ? { width: painted.width * scale } : {}),
       rotation: (painted.rotation ?? 0) - viewport.twist,
     };
   }
@@ -1612,6 +1622,7 @@ function transformEntity(
       ...entity,
       p: map(entity.p),
       height: entity.height * Math.abs(insert.sy || 1),
+      ...(entity.width !== undefined ? { width: entity.width * Math.abs(insert.sx || 1) } : {}),
     };
   }
   const scale = Math.max(Math.abs(insert.sx || 1), Math.abs(insert.sy || 1));
@@ -1759,7 +1770,8 @@ function uniqueStrings(values: string[]) {
 
 function stripDxfMarkup(value: string) {
   return value
-    .replace(/\\[Pp]~?;/g, " ")
+    .replace(/\\[Pp];?/g, "\n")
+    .replace(/\\~/g, " ")
     .replace(/\\[A-Za-z][^;]*;/g, "")
     .replace(/[{}]/g, "")
     .replace(/%%[UuOo]/g, "");

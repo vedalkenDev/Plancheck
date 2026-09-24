@@ -150,3 +150,48 @@ export function arcPath(
   const large = sweep > 180 ? 1 : 0;
   return `M ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2}`;
 }
+
+const CHAR_WIDTH = 0.55;
+
+export function wrapText(value: string, width: number | undefined, height: number) {
+  const paragraphs = value.split("\n");
+  const maxChars =
+    width && width > 0 && height > 0 ? Math.max(1, Math.floor(width / (height * CHAR_WIDTH))) : 0;
+  if (!maxChars) {
+    return paragraphs.length ? paragraphs : [""];
+  }
+  return paragraphs.flatMap((paragraph) => wrapParagraph(paragraph, maxChars));
+}
+
+function wrapParagraph(paragraph: string, maxChars: number) {
+  const words = paragraph.split(/\s+/).filter(Boolean);
+  if (!words.length) {
+    return [""];
+  }
+  const lines: string[] = [];
+  let line = "";
+  const pushWord = (word: string) => {
+    let rest = word;
+    while (rest.length > maxChars) {
+      lines.push(rest.slice(0, maxChars));
+      rest = rest.slice(maxChars);
+    }
+    line = rest;
+  };
+  for (const word of words) {
+    if (!line) {
+      pushWord(word);
+      continue;
+    }
+    if (line.length + 1 + word.length <= maxChars) {
+      line = `${line} ${word}`;
+      continue;
+    }
+    lines.push(line);
+    pushWord(word);
+  }
+  if (line) {
+    lines.push(line);
+  }
+  return lines;
+}
