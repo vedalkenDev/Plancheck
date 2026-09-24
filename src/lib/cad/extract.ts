@@ -1770,7 +1770,7 @@ function uniqueStrings(values: string[]) {
 
 function stripDxfMarkup(value: string) {
   return value
-    .replace(/\\[Pp];?/g, "\n")
+    .replace(/\\P/g, "\n")
     .replace(/\\~/g, " ")
     .replace(/\\[A-Za-z][^;]*;/g, "")
     .replace(/[{}]/g, "")

@@ -151,7 +151,7 @@ export function arcPath(
   return `M ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2}`;
 }
 
-const CHAR_WIDTH = 0.55;
+const CHAR_WIDTH = 0.62;
 
 export function wrapText(value: string, width: number | undefined, height: number) {
   const paragraphs = value.split("\n");

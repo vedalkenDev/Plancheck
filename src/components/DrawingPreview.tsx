@@ -364,7 +364,7 @@ function renderEntity(
   }
   const x = entity.p.x;
   const y = sy(entity.p.y);
-  const fontSize = Math.max(entity.height, span / 400);
+  const fontSize = entity.height;
   const lines = wrapText(entity.value, entity.width, fontSize);
   const leading = fontSize * 1.6;
   const shift =

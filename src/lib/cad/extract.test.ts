@@ -1031,6 +1031,32 @@ EOF
     assert.ok(note && note.kind === "text");
     assert.equal(note.width, 40);
     assert.equal(note.value, "First part of the note\nSecond part that stays");
+    const centered = fromText(`0
+SECTION
+2
+ENTITIES
+0
+MTEXT
+8
+Text
+10
+1
+20
+1
+40
+2.5
+41
+30
+1
+\\pxqc;Add client info here
+0
+ENDSEC
+0
+EOF
+`);
+    const client = centered.geometry.find((entity) => entity.kind === "text");
+    assert.ok(client && client.kind === "text");
+    assert.equal(client.value, "Add client info here");
     assert.ok(extract.strings.some((line) => line.includes("First part of the note Second part")));
   });
 });
