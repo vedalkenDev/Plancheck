@@ -20,7 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { AuditSample, SampleDrawing } from "@/data/types";
-import { auditFromDrawing, buildAnnotatedDrawing, extractDrawing } from "@/lib/cad";
+import { auditFromDrawing, buildAnnotatedDrawing, extractDrawing, stampAudit } from "@/lib/cad";
 import { addVisibleText } from "@/lib/cad/annotate";
 import { dwgToDxf } from "@/lib/cad/dwg-to-dxf";
 import type { DrawingExtract } from "@/lib/cad/extract";
@@ -108,7 +108,7 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
       ]);
       const { drawing, sourceText: nextText } = await readDrawing(file.name, bytes);
       const result = auditFromDrawing(file.name, drawing);
-      setExtract(drawing);
+      setExtract(stampAudit(drawing, result));
       setSourceText(nextText);
       setAudit(result);
     } catch {
@@ -147,7 +147,7 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
       const { drawing, sourceText: nextText } = await readDrawing(filename, bytes);
       const result = auditFromDrawing(sample.label, drawing);
       result.label = sample.label;
-      setExtract(drawing);
+      setExtract(stampAudit(drawing, result));
       setSourceText(nextText);
       setAudit(result);
     } catch {
@@ -306,7 +306,6 @@ function DrawingPane({
           <DrawingPreview
             extract={extract}
             label={label}
-            audit={audit}
             onToggleFullscreen={() => setFullscreen(true)}
           />
         </div>
