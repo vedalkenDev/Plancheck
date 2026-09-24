@@ -306,6 +306,7 @@ function DrawingPane({
           <DrawingPreview
             extract={extract}
             label={label}
+            audit={audit}
             onToggleFullscreen={() => setFullscreen(true)}
           />
         </div>

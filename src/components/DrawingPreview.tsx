@@ -3,6 +3,7 @@
 import { Maximize2, Minimize2, Scaling } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import type { AuditSample } from "@/data/types";
 import type { DrawingExtract, GeomEntity, Point } from "@/lib/cad/extract";
 import {
   cameraViewBox,
@@ -19,6 +20,7 @@ type DrawingPreviewProps = {
   extract: DrawingExtract;
   label: string;
   fullscreen?: boolean;
+  audit?: AuditSample | null;
   onToggleFullscreen?: () => void;
 };
 
@@ -26,6 +28,7 @@ export function DrawingPreview({
   extract,
   label,
   fullscreen = false,
+  audit = null,
   onToggleFullscreen,
 }: DrawingPreviewProps) {
   const bounds = useMemo(() => geometryBounds(extract.geometry), [extract.geometry]);
@@ -262,7 +265,50 @@ export function DrawingPreview({
           </Button>
         ) : null}
       </div>
+      {audit ? <SansBlocks audit={audit} /> : null}
     </div>
+  );
+}
+
+function SansBlocks({ audit }: { audit: AuditSample }) {
+  const blocks = [
+    ...audit.failed.map((row) => ({
+      id: row.id,
+      part: row.part,
+      check: row.check,
+      body: row.adjust,
+      failed: true,
+    })),
+    ...audit.passed.map((row) => ({
+      id: row.id,
+      part: row.part,
+      check: row.check,
+      body: row.detail,
+      failed: false,
+    })),
+  ];
+
+  return (
+    <aside
+      aria-label="SANS 10400 on this sheet"
+      className="absolute top-12 right-2 bottom-2 z-10 flex w-40 flex-col gap-1 overflow-auto"
+    >
+      <p className="rounded bg-neutral-950/90 px-2 py-1 text-[10px] leading-snug text-white">
+        {audit.verdict}
+      </p>
+      {blocks.map((block) => (
+        <article
+          key={block.id}
+          className={`rounded border bg-white/95 px-2 py-1 shadow-sm ${block.failed ? "border-red-700" : "border-green-700"}`}
+        >
+          <p className="text-[10px] font-semibold tracking-wide text-neutral-950 uppercase">
+            SANS {block.part}
+          </p>
+          <p className="text-[11px] leading-tight text-neutral-950">{block.check}</p>
+          <p className="text-[10px] leading-snug text-neutral-700">{block.body}</p>
+        </article>
+      ))}
+    </aside>
   );
 }
 
