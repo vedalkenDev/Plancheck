@@ -13,7 +13,7 @@ import {
   zoomCamera,
   type Camera,
 } from "@/lib/cad/camera";
-import { arcPath, geometryBounds } from "@/lib/cad/preview";
+import { arcPath, geometryBounds, wrapText } from "@/lib/cad/preview";
 
 type DrawingPreviewProps = {
   extract: DrawingExtract;
@@ -364,12 +364,21 @@ function renderEntity(
   }
   const x = entity.p.x;
   const y = sy(entity.p.y);
+  const fontSize = entity.height;
+  const lines = wrapText(entity.value, entity.width, fontSize);
+  const leading = fontSize * 1.6;
+  const shift =
+    entity.valign === "top"
+      ? 0
+      : entity.valign === "middle"
+        ? -((lines.length - 1) * leading) / 2
+        : -((lines.length - 1) * leading);
   return (
     <text
       key={`t-${index}`}
       x={x}
       y={y}
-      fontSize={Math.max(entity.height, span / 400)}
+      fontSize={fontSize}
       fontFamily="ui-sans-serif, system-ui, sans-serif"
       textAnchor={entity.align === "center" ? "middle" : entity.align === "right" ? "end" : "start"}
       dominantBaseline={
@@ -378,7 +387,11 @@ function renderEntity(
       transform={entity.rotation ? `rotate(${-entity.rotation} ${x} ${y})` : undefined}
       fill={entity.layer === "NOTE" ? "#dc2626" : ink}
     >
-      {entity.value.slice(0, 120)}
+      {lines.map((line, lineIndex) => (
+        <tspan key={lineIndex} x={x} dy={lineIndex === 0 ? shift : leading}>
+          {line}
+        </tspan>
+      ))}
     </text>
   );
 }

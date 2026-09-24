@@ -20,7 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { AuditSample, SampleDrawing } from "@/data/types";
-import { auditFromDrawing, buildAnnotatedDrawing, extractDrawing } from "@/lib/cad";
+import { auditFromDrawing, buildAnnotatedDrawing, extractDrawing, stampAudit } from "@/lib/cad";
 import { addVisibleText } from "@/lib/cad/annotate";
 import { dwgToDxf } from "@/lib/cad/dwg-to-dxf";
 import type { DrawingExtract } from "@/lib/cad/extract";
@@ -61,8 +61,9 @@ async function readDrawing(filename: string, bytes: ArrayBuffer) {
 export function PlancheckApp({ samples }: PlancheckAppProps) {
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [audit, setAudit] = useState<AuditSample | null>(null);
   const [extract, setExtract] = useState<DrawingExtract | null>(null);
+  const [drawingName, setDrawingName] = useState("drawing");
+  const [sheetIndex, setSheetIndex] = useState(0);
   const [sourceText, setSourceText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
@@ -73,8 +74,8 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
   }
 
   function reset() {
-    setAudit(null);
     setExtract(null);
+    setSheetIndex(0);
     setSourceText(null);
     setError(null);
     setReading(false);
@@ -96,7 +97,7 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
 
     setError(null);
     setReading(true);
-    setAudit(null);
+    setSheetIndex(0);
     resetChecks();
 
     try {
@@ -107,10 +108,9 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
         }),
       ]);
       const { drawing, sourceText: nextText } = await readDrawing(file.name, bytes);
-      const result = auditFromDrawing(file.name, drawing);
+      setDrawingName(file.name);
       setExtract(drawing);
       setSourceText(nextText);
-      setAudit(result);
     } catch {
       setError("The drawing could not be read. Export it from CAD and try again.");
       setExtract(null);
@@ -130,7 +130,7 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
   async function loadSample(sample: SampleDrawing) {
     setError(null);
     setReading(true);
-    setAudit(null);
+    setSheetIndex(0);
     resetChecks();
     try {
       const [response] = await Promise.all([
@@ -145,17 +145,42 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
       const bytes = await response.arrayBuffer();
       const filename = sample.href.split("/").pop() ?? `${sample.id}.dxf`;
       const { drawing, sourceText: nextText } = await readDrawing(filename, bytes);
-      const result = auditFromDrawing(sample.label, drawing);
-      result.label = sample.label;
+      setDrawingName(sample.label);
       setExtract(drawing);
       setSourceText(nextText);
-      setAudit(result);
     } catch {
       setError("The sample drawing could not be loaded.");
     } finally {
       setReading(false);
     }
   }
+
+  const viewed = useMemo(() => {
+    if (!extract) {
+      return null;
+    }
+    const sheets = extract.sheets.length
+      ? extract.sheets
+      : [
+          {
+            name: "Sheet 1",
+            geometry: extract.geometry,
+            texts: extract.texts,
+            strings: extract.strings,
+          },
+        ];
+    const index = Math.min(sheetIndex, sheets.length - 1);
+    const sheet = sheets[index];
+    const base: DrawingExtract = {
+      ...extract,
+      geometry: sheet.geometry,
+      texts: sheet.texts,
+      strings: sheet.strings,
+      sheets,
+    };
+    const result = auditFromDrawing(drawingName, base);
+    return { extract: stampAudit(base, result), audit: result, sheets, index };
+  }, [extract, sheetIndex, drawingName]);
 
   return (
     <div className="flex min-h-svh flex-col bg-background lg:h-svh lg:overflow-hidden">
@@ -184,17 +209,45 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
             accept=".dwg,.dxf,application/acad,image/vnd.dwg,image/vnd.dxf"
             onChange={(event) => void onFile(event.target.files?.[0])}
           />
-          {extract && !reading ? (
+          {viewed && !reading ? (
             <DrawingPane
-              extract={extract}
+              extract={viewed.extract}
               sourceText={sourceText}
-              label={audit?.label ?? "Drawing"}
-              audit={audit}
+              label={viewed.audit.label}
+              audit={viewed.audit}
+              sheets={viewed.sheets}
+              sheetIndex={viewed.index}
+              onSheet={(index) => {
+                setSheetIndex(index);
+                resetChecks();
+              }}
               done={done}
               setDone={setDone}
               onReplace={reset}
               onChange={(next) => {
-                setExtract(next.extract);
+                setExtract((current) => {
+                  if (!current?.sheets.length) {
+                    return next.extract;
+                  }
+                  const sheets = current.sheets.map((sheet, index) =>
+                    index === sheetIndex
+                      ? {
+                          name: sheet.name,
+                          geometry: next.extract.geometry,
+                          texts: next.extract.texts,
+                          strings: next.extract.strings,
+                        }
+                      : sheet,
+                  );
+                  const first = sheets[0];
+                  return {
+                    ...current,
+                    sheets,
+                    geometry: first.geometry,
+                    texts: first.texts,
+                    strings: first.strings,
+                  };
+                });
                 setSourceText(next.sourceText);
               }}
             />
@@ -253,10 +306,11 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
           <div className="p-4 md:p-6">
             {reading ? (
               <InspectingState />
-            ) : audit ? (
+            ) : viewed ? (
               <Analysis
-                audit={audit}
-                extract={extract}
+                audit={viewed.audit}
+                extract={viewed.extract}
+                sheetName={viewed.sheets[viewed.index]?.name ?? "Sheet 1"}
                 sourceText={sourceText}
                 done={done}
                 setDone={setDone}
@@ -276,6 +330,9 @@ function DrawingPane({
   sourceText,
   label,
   audit,
+  sheets,
+  sheetIndex,
+  onSheet,
   done,
   setDone,
   onReplace,
@@ -285,6 +342,9 @@ function DrawingPane({
   sourceText: string | null;
   label: string;
   audit: AuditSample | null;
+  sheets: { name: string }[];
+  sheetIndex: number;
+  onSheet: (index: number) => void;
   done: Record<string, boolean>;
   setDone: (value: Record<string, boolean>) => void;
   onReplace: () => void;
@@ -301,6 +361,7 @@ function DrawingPane({
             Replace
           </Button>
         </div>
+        <SheetTabs sheets={sheets} sheetIndex={sheetIndex} onSheet={onSheet} />
         <NoteForm extract={extract} sourceText={sourceText} onChange={onChange} />
         <div className="min-h-0 flex-1 overflow-hidden rounded-lg border">
           <DrawingPreview
@@ -316,6 +377,9 @@ function DrawingPane({
           sourceText={sourceText}
           label={label}
           audit={audit}
+          sheets={sheets}
+          sheetIndex={sheetIndex}
+          onSheet={onSheet}
           done={done}
           setDone={setDone}
           onChange={onChange}
@@ -323,6 +387,37 @@ function DrawingPane({
         />
       ) : null}
     </>
+  );
+}
+
+function SheetTabs({
+  sheets,
+  sheetIndex,
+  onSheet,
+}: {
+  sheets: { name: string }[];
+  sheetIndex: number;
+  onSheet: (index: number) => void;
+}) {
+  if (sheets.length < 2) {
+    return null;
+  }
+  return (
+    <div className="flex flex-wrap gap-1" role="tablist" aria-label="Sheets">
+      {sheets.map((sheet, index) => (
+        <Button
+          key={`${sheet.name}-${index}`}
+          type="button"
+          size="sm"
+          variant={index === sheetIndex ? "secondary" : "outline"}
+          role="tab"
+          aria-selected={index === sheetIndex}
+          onClick={() => onSheet(index)}
+        >
+          {sheet.name}
+        </Button>
+      ))}
+    </div>
   );
 }
 
@@ -368,6 +463,9 @@ function FullscreenDrawing({
   sourceText,
   label,
   audit,
+  sheets,
+  sheetIndex,
+  onSheet,
   done,
   setDone,
   onChange,
@@ -377,6 +475,9 @@ function FullscreenDrawing({
   sourceText: string | null;
   label: string;
   audit: AuditSample | null;
+  sheets: { name: string }[];
+  sheetIndex: number;
+  onSheet: (index: number) => void;
   done: Record<string, boolean>;
   setDone: (value: Record<string, boolean>) => void;
   onChange: (next: { extract: DrawingExtract; sourceText: string | null }) => void;
@@ -429,6 +530,7 @@ function FullscreenDrawing({
     <div ref={shellRef} className="fixed inset-0 z-50 flex flex-col bg-background">
       <div className="flex shrink-0 items-center gap-3 border-b px-3 py-2">
         <p className="max-w-xs truncate text-sm font-medium">{label}</p>
+        <SheetTabs sheets={sheets} sheetIndex={sheetIndex} onSheet={onSheet} />
         <div className="min-w-0 flex-1">
           <NoteForm extract={extract} sourceText={sourceText} onChange={onChange} />
         </div>
@@ -480,12 +582,14 @@ function InspectingState() {
 function Analysis({
   audit,
   extract,
+  sheetName,
   sourceText,
   done,
   setDone,
 }: {
   audit: AuditSample;
   extract: DrawingExtract | null;
+  sheetName: string;
   sourceText: string | null;
   done: Record<string, boolean>;
   setDone: (value: Record<string, boolean>) => void;
@@ -508,7 +612,7 @@ function Analysis({
       return;
     }
     downloadBlob(
-      `${audit.fileStem}-annotated.dxf`,
+      `${audit.fileStem}-${sheetName.replace(/\s+/g, "-").toLowerCase()}-annotated.dxf`,
       buildAnnotatedDrawing(audit, extract, sourceText ?? undefined),
       "application/dxf",
     );

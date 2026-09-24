@@ -891,6 +891,267 @@ describe("sheet style sample", () => {
   });
 });
 
+describe("paper sheet", () => {
+  it("fits the sheet and the model window inside each viewport", () => {
+    const extract = fromText(`0
+SECTION
+2
+ENTITIES
+0
+LINE
+8
+WALL
+10
+0.0
+20
+0.0
+11
+1000.0
+21
+0.0
+0
+LINE
+8
+BORDER
+67
+1
+10
+0.0
+20
+0.0
+11
+100.0
+21
+0.0
+0
+VIEWPORT
+67
+1
+10
+50.0
+20
+25.0
+40
+80.0
+41
+40.0
+12
+500.0
+22
+0.0
+45
+100.0
+68
+1
+69
+2
+0
+ENDSEC
+0
+EOF
+`);
+    const wall = extract.geometry.find((entity) => entity.kind === "line" && entity.layer === "WALL");
+    const border = extract.geometry.find((entity) => entity.kind === "line" && entity.layer === "BORDER");
+    assert.ok(wall && wall.kind === "line");
+    assert.ok(border && border.kind === "line");
+    assert.ok(Math.abs(wall.a.x - 10) < 0.01);
+    assert.ok(Math.abs(wall.b.x - 90) < 0.01);
+    assert.ok(Math.abs(wall.a.y - 25) < 0.01);
+    const bounds = geometryBounds(extract.geometry);
+    assert.ok(bounds);
+    assert.ok(bounds.maxX - bounds.minX < 200);
+  });
+});
+
+describe("paper layouts", () => {
+  it("keeps each paper layout as its own sheet", () => {
+    const extract = fromText(`0
+SECTION
+2
+BLOCKS
+0
+BLOCK
+2
+*Paper_Space0
+70
+0
+10
+0.0
+20
+0.0
+30
+0.0
+3
+*Paper_Space0
+1
+
+0
+LINE
+8
+OTHER
+10
+0.0
+20
+0.0
+11
+40.0
+21
+0.0
+0
+ENDBLK
+0
+ENDSEC
+0
+SECTION
+2
+ENTITIES
+0
+LINE
+8
+BORDER
+67
+1
+10
+0.0
+20
+0.0
+11
+100.0
+21
+0.0
+0
+VIEWPORT
+67
+1
+10
+50.0
+20
+25.0
+40
+80.0
+41
+40.0
+12
+0.0
+22
+0.0
+45
+100.0
+68
+1
+69
+2
+0
+ENDSEC
+0
+EOF
+`);
+    assert.equal(extract.sheets.length, 2);
+    assert.equal(extract.sheets[0].name, "Sheet 1");
+    assert.ok(extract.sheets[0].geometry.some((entity) => entity.kind === "line" && entity.layer === "BORDER"));
+    assert.ok(extract.sheets[1].geometry.some((entity) => entity.kind === "line" && entity.layer === "OTHER"));
+    assert.ok(!extract.sheets[0].geometry.some((entity) => entity.kind === "line" && entity.layer === "OTHER"));
+  });
+});
+
+describe("mtext height", () => {
+  it("keeps the character height when an embedded object repeats group 40", () => {
+    const extract = fromText(`0
+SECTION
+2
+ENTITIES
+0
+MTEXT
+8
+Text
+10
+10.0
+20
+10.0
+40
+2.5
+41
+140.0
+1
+Note about the roof
+101
+Embedded Object
+40
+140.0
+41
+0.0
+0
+ENDSEC
+0
+EOF
+`);
+    const note = extract.geometry.find((entity) => entity.kind === "text");
+    assert.ok(note && note.kind === "text");
+    assert.equal(note.height, 2.5);
+  });
+});
+
+describe("mtext columns", () => {
+  it("keeps paragraph breaks and the column width", () => {
+    const extract = fromText(`0
+SECTION
+2
+ENTITIES
+0
+MTEXT
+8
+Text
+10
+10.0
+20
+20.0
+40
+2.0
+41
+40.0
+3
+First part of the note
+1
+\\PSecond part that stays
+0
+ENDSEC
+0
+EOF
+`);
+    const note = extract.geometry.find((entity) => entity.kind === "text");
+    assert.ok(note && note.kind === "text");
+    assert.equal(note.width, 40);
+    assert.equal(note.value, "First part of the note\nSecond part that stays");
+    const centered = fromText(`0
+SECTION
+2
+ENTITIES
+0
+MTEXT
+8
+Text
+10
+1
+20
+1
+40
+2.5
+41
+30
+1
+\\pxqc;Add client info here
+0
+ENDSEC
+0
+EOF
+`);
+    const client = centered.geometry.find((entity) => entity.kind === "text");
+    assert.ok(client && client.kind === "text");
+    assert.equal(client.value, "Add client info here");
+    assert.ok(extract.strings.some((line) => line.includes("First part of the note Second part")));
+  });
+});
+
 describe("sample drawings", () => {
   it("still frames the marine drive site", () => {
     const bytes = readFileSync("public/samples/marine-drive.dxf");

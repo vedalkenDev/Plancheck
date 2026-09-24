@@ -36,7 +36,15 @@ export type GeomEntity =
       rotation?: number;
       align?: "left" | "center" | "right";
       valign?: "baseline" | "middle" | "top";
+      width?: number;
     });
+
+export type DrawingSheet = {
+  name: string;
+  geometry: GeomEntity[];
+  texts: DrawingText[];
+  strings: string[];
+};
 
 export type DrawingExtract = {
   format: "dxf" | "dwg" | "unknown";
@@ -44,6 +52,7 @@ export type DrawingExtract = {
   strings: string[];
   entityCounts: Record<string, number>;
   geometry: GeomEntity[];
+  sheets: DrawingSheet[];
 };
 
 const JUNK =
@@ -111,7 +120,23 @@ type RawEntity = GeomEntity | InsertEntity;
 type BlockDef = {
   base: Point;
   entities: RawEntity[];
+  viewports: SheetViewport[];
 };
+
+type SheetViewport = {
+  id: number;
+  on: boolean;
+  cx: number;
+  cy: number;
+  w: number;
+  h: number;
+  mx: number;
+  my: number;
+  viewH: number;
+  twist: number;
+};
+
+type Box = { minX: number; minY: number; maxX: number; maxY: number };
 
 function parseDxf(content: string): DrawingExtract {
   const lines = content.split(/\r?\n/);
@@ -121,12 +146,23 @@ function parseDxf(content: string): DrawingExtract {
   const layers = new Map<string, { color?: number; weight?: number; lineType?: string }>();
   const lineTypes = new Map<string, number[]>();
   const model: RawEntity[] = [];
+  const paper: RawEntity[] = [];
+  const viewports: SheetViewport[] = [];
+  const layoutNames: string[] = [];
+  let layoutTitle = false;
   let headerVar = "";
   let ltScale = 1;
+  let inPaper = false;
+  let embedded = false;
 
   let section = "";
   let expectSection = false;
-  let openBlock: { name: string; base: Point; entities: RawEntity[] } | null = null;
+  let openBlock: {
+    name: string;
+    base: Point;
+    entities: RawEntity[];
+    viewports: SheetViewport[];
+  } | null = null;
   let entity = "";
   let value = "";
   let extra = "";
@@ -140,6 +176,7 @@ function parseDxf(content: string): DrawingExtract {
   let start = 0;
   let end = 0;
   let height = 2.5;
+  let column = 0;
   let flags = 0;
   let sx = 1;
   let sy = 1;
@@ -181,6 +218,7 @@ function parseDxf(content: string): DrawingExtract {
     start = 0;
     end = 0;
     height = 2.5;
+    column = 0;
     sx = 1;
     sy = 1;
     cols = 1;
@@ -205,6 +243,8 @@ function parseDxf(content: string): DrawingExtract {
     attach = 0;
     textRot = null;
     chunks = [];
+    inPaper = false;
+    embedded = false;
     if (!keepPolyline) {
       layer = "";
       flags = 0;
@@ -235,7 +275,7 @@ function parseDxf(content: string): DrawingExtract {
       return;
     }
     if (section === "ENTITIES") {
-      model.push(painted);
+      (inPaper ? paper : model).push(painted);
     }
   }
 
@@ -244,13 +284,22 @@ function parseDxf(content: string): DrawingExtract {
       entity = "POLYLINE";
     }
     const drawnLayer = layer || undefined;
+    if (entity === "VIEWPORT") {
+      const viewport = viewportFrom(chunks);
+      if (viewport && openBlock) {
+        openBlock.viewports.push(viewport);
+      } else if (viewport && inPaper) {
+        viewports.push(viewport);
+      }
+      return;
+    }
     if (entity === "ELLIPSE" || entity === "SOLID" || entity === "HATCH") {
       for (const shape of shapesFrom(entity, chunks, drawnLayer)) {
         commit(shape);
       }
       return;
     }
-    const combined = stripDxfMarkup(`${value}${extra}`).trim();
+    const combined = stripDxfMarkup(entity === "MTEXT" ? `${extra}${value}` : `${value}${extra}`).trim();
     if (entity === "DIMENSION") {
       if (combined) {
         texts.push({
@@ -313,6 +362,7 @@ function parseDxf(content: string): DrawingExtract {
         p: placed.p,
         height,
         value: combined,
+        ...(column > 0 ? { width: column } : {}),
         ...(rotation ? { rotation } : {}),
         ...(placed.align ? { align: placed.align } : {}),
         ...(placed.valign ? { valign: placed.valign } : {}),
@@ -400,7 +450,18 @@ function parseDxf(content: string): DrawingExtract {
     const raw = lines[i + 1] ?? "";
     i += 1;
 
-    if (code !== 0 && (entity === "HATCH" || entity === "SOLID" || entity === "ELLIPSE")) {
+    if (code === 101) {
+      embedded = true;
+      continue;
+    }
+    if (embedded && code !== 0) {
+      continue;
+    }
+
+    if (
+      code !== 0 &&
+      (entity === "HATCH" || entity === "SOLID" || entity === "ELLIPSE" || entity === "VIEWPORT")
+    ) {
       chunks.push({ code, value: raw.trim() });
     }
 
@@ -421,6 +482,7 @@ function parseDxf(content: string): DrawingExtract {
         blocks.set(openBlock.name, {
           base: openBlock.base,
           entities: openBlock.entities,
+          viewports: openBlock.viewports,
         });
       }
       if (next === "ENDBLK") {
@@ -434,7 +496,7 @@ function parseDxf(content: string): DrawingExtract {
         expectSection = true;
       }
       if (next === "BLOCK" && section === "BLOCKS") {
-        openBlock = { name: "", base: { x: 0, y: 0 }, entities: [] };
+        openBlock = { name: "", base: { x: 0, y: 0 }, entities: [], viewports: [] };
       }
       entityCounts[next] = (entityCounts[next] ?? 0) + 1;
       resetEntity(next, false);
@@ -447,8 +509,17 @@ function parseDxf(content: string): DrawingExtract {
       continue;
     }
 
-    if (code === 1) {
+    if (code === 100 && raw.trim() === "AcDbLayout") {
+      layoutTitle = true;
+    } else if (code === 1) {
       value = raw;
+      if (entity === "LAYOUT" && layoutTitle) {
+        const name = raw.trim();
+        layoutTitle = false;
+        if (name && !/^model$/i.test(name)) {
+          layoutNames.push(name);
+        }
+      }
     } else if (code === 3) {
       extra += raw;
     } else if (code === 8) {
@@ -518,6 +589,11 @@ function parseDxf(content: string): DrawingExtract {
       } else if (Number.isFinite(num) && num > 0) {
         height = num;
       }
+    } else if (code === 41 && entity === "MTEXT") {
+      const num = Number.parseFloat(raw);
+      if (Number.isFinite(num) && num > 0) {
+        column = num;
+      }
     } else if (code === 41 && entity === "INSERT") {
       sx = Number.parseFloat(raw) || 1;
     } else if (code === 42 && (entity === "LWPOLYLINE" || entity === "VERTEX")) {
@@ -557,6 +633,8 @@ function parseDxf(content: string): DrawingExtract {
       } else {
         flags = num;
       }
+    } else if (code === 67) {
+      inPaper = raw.trim() === "1";
     } else if (code === 62) {
       const num = Number.parseInt(raw.trim(), 10);
       if (Number.isFinite(num)) {
@@ -585,15 +663,82 @@ function parseDxf(content: string): DrawingExtract {
   flush();
 
   const placed = placeInserts(model, blocks);
-  const fallback = placed.some(isDrawn) ? placed : modelSpaceFallback(blocks);
-  const geometry = fallback.length ? fallback : placed;
+  const activePaper = placeInserts(paper, blocks);
+  const active = composeSheet(placed, activePaper, viewports) ?? placed;
+  const fallback = active.some(isDrawn) ? active : modelSpaceFallback(blocks);
+  const geometry = fallback.length ? fallback : active;
+  const collected = collectSheets(layoutNames, geometry, placed, blocks);
+  const sheets = collected.length === 1 ? [withFileText(collected[0], texts)] : collected;
+  const first = sheets[0];
 
   return {
     format: "dxf",
-    texts,
-    strings: uniqueStrings(texts.map((item) => item.value)),
+    texts: sheets.length === 1 ? texts : first.texts,
+    strings:
+      sheets.length === 1
+        ? uniqueStrings(texts.map((item) => item.value.replace(/\s+/g, " ")))
+        : first.strings,
     entityCounts,
+    geometry: first.geometry,
+    sheets,
+  };
+}
+
+function collectSheets(
+  layoutNames: string[],
+  active: GeomEntity[],
+  model: GeomEntity[],
+  blocks: Map<string, BlockDef>,
+): DrawingSheet[] {
+  const sheets: DrawingSheet[] = [];
+  const push = (geometry: GeomEntity[]) => {
+    const name = layoutNames[sheets.length] ?? `Sheet ${sheets.length + 1}`;
+    sheets.push(sheetFromGeometry(name, geometry));
+  };
+  if (active.some(isDrawn)) {
+    push(active);
+  }
+  const extras = [...blocks.entries()]
+    .filter(([name]) => /^\*Paper_Space\d+$/i.test(name))
+    .sort(([a], [b]) => paperBlockOrder(a) - paperBlockOrder(b));
+  for (const [, block] of extras) {
+    const paper = placeInserts(block.entities, blocks);
+    const composed = composeSheet(model, paper, block.viewports);
+    const geometry = composed ?? paper;
+    if (geometry.some(isDrawn)) {
+      push(geometry);
+    }
+  }
+  if (!sheets.length) {
+    push(active);
+  }
+  return sheets;
+}
+
+function withFileText(sheet: DrawingSheet, texts: DrawingText[]): DrawingSheet {
+  return {
+    ...sheet,
+    texts,
+    strings: uniqueStrings(texts.map((item) => item.value.replace(/\s+/g, " "))),
+  };
+}
+
+function paperBlockOrder(name: string) {
+  const match = name.match(/(\d+)$/);
+  return match ? Number(match[1]) : 0;
+}
+
+function sheetFromGeometry(name: string, geometry: GeomEntity[]): DrawingSheet {
+  const texts = geometry.flatMap((entity) =>
+    entity.kind === "text"
+      ? [{ kind: "text" as const, value: entity.value, layer: entity.layer }]
+      : [],
+  );
+  return {
+    name,
     geometry,
+    texts,
+    strings: uniqueStrings(texts.map((item) => item.value.replace(/\s+/g, " "))),
   };
 }
 
@@ -1185,6 +1330,309 @@ function isDrawn(entity: GeomEntity) {
   return entity.kind !== "text";
 }
 
+function viewportFrom(pairs: { code: number; value: string }[]): SheetViewport | null {
+  const num = (code: number, fallback = 0) => {
+    const found = pairs.find((pair) => pair.code === code);
+    const value = found ? Number.parseFloat(found.value) : Number.NaN;
+    return Number.isFinite(value) ? value : fallback;
+  };
+  const width = num(40);
+  const height = num(41);
+  const viewH = num(45);
+  if (width <= 0 || height <= 0 || viewH <= 0) {
+    return null;
+  }
+  return {
+    id: Math.round(num(69, 1)),
+    on: Math.round(num(68, 1)) !== 0,
+    cx: num(10),
+    cy: num(20),
+    w: width,
+    h: height,
+    mx: num(12),
+    my: num(22),
+    viewH,
+    twist: num(51),
+  };
+}
+
+function composeSheet(
+  model: GeomEntity[],
+  paper: GeomEntity[],
+  viewports: SheetViewport[],
+): GeomEntity[] | null {
+  const windows = viewports.filter((viewport) => viewport.on && viewport.id !== 1);
+  if (!windows.length) {
+    return null;
+  }
+  const framed = model.map((entity) => ({ entity, box: entityBox(entity) }));
+  const seen = paper.slice();
+  for (const viewport of windows) {
+    const viewW = viewport.viewH * (viewport.w / viewport.h);
+    const window: Box = {
+      minX: viewport.mx - viewW / 2,
+      maxX: viewport.mx + viewW / 2,
+      minY: viewport.my - viewport.viewH / 2,
+      maxY: viewport.my + viewport.viewH / 2,
+    };
+    const scale = viewport.h / viewport.viewH;
+    for (const item of framed) {
+      if (!item.box || !overlaps(item.box, window)) {
+        continue;
+      }
+      const clipped = clipToWindow(item.entity, item.box, window);
+      if (!clipped) {
+        continue;
+      }
+      seen.push(ontoSheet(clipped, viewport, scale));
+    }
+  }
+  return seen;
+}
+
+function ontoSheet(entity: GeomEntity, viewport: SheetViewport, scale: number): GeomEntity {
+  const map = (point: Point) => {
+    let dx = point.x - viewport.mx;
+    let dy = point.y - viewport.my;
+    if (viewport.twist) {
+      const angle = (-viewport.twist * Math.PI) / 180;
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      const rx = dx * cos - dy * sin;
+      const ry = dx * sin + dy * cos;
+      dx = rx;
+      dy = ry;
+    }
+    return { x: viewport.cx + dx * scale, y: viewport.cy + dy * scale };
+  };
+  const dash = entity.dash?.map((part) => part * scale);
+  const painted = dash ? { ...entity, dash } : entity;
+  if (painted.kind === "line") {
+    return { ...painted, a: map(painted.a), b: map(painted.b) };
+  }
+  if (painted.kind === "polyline") {
+    return { ...painted, points: painted.points.map(map) };
+  }
+  if (painted.kind === "text") {
+    return {
+      ...painted,
+      p: map(painted.p),
+      height: painted.height * scale,
+      ...(painted.width !== undefined ? { width: painted.width * scale } : {}),
+      rotation: (painted.rotation ?? 0) - viewport.twist,
+    };
+  }
+  if (painted.kind === "circle") {
+    return { ...painted, c: map(painted.c), r: painted.r * scale };
+  }
+  return {
+    ...painted,
+    c: map(painted.c),
+    r: painted.r * scale,
+    start: painted.start - viewport.twist,
+    end: painted.end - viewport.twist,
+  };
+}
+
+function entityBox(entity: GeomEntity): Box | null {
+  const points =
+    entity.kind === "line"
+      ? [entity.a, entity.b]
+      : entity.kind === "polyline"
+        ? entity.points
+        : entity.kind === "text"
+          ? [entity.p]
+          : [
+              { x: entity.c.x - entity.r, y: entity.c.y - entity.r },
+              { x: entity.c.x + entity.r, y: entity.c.y + entity.r },
+            ];
+  return boxOf(points);
+}
+
+function boxOf(points: Point[]): Box | null {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const point of points) {
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+      continue;
+    }
+    minX = Math.min(minX, point.x);
+    minY = Math.min(minY, point.y);
+    maxX = Math.max(maxX, point.x);
+    maxY = Math.max(maxY, point.y);
+  }
+  if (!Number.isFinite(minX)) {
+    return null;
+  }
+  return { minX, minY, maxX, maxY };
+}
+
+function overlaps(a: Box, b: Box) {
+  return a.minX <= b.maxX && a.maxX >= b.minX && a.minY <= b.maxY && a.maxY >= b.minY;
+}
+
+function contains(outer: Box, inner: Box) {
+  return (
+    inner.minX >= outer.minX &&
+    inner.maxX <= outer.maxX &&
+    inner.minY >= outer.minY &&
+    inner.maxY <= outer.maxY
+  );
+}
+
+function clipToWindow(entity: GeomEntity, box: Box, window: Box): GeomEntity | null {
+  if (contains(window, box)) {
+    return entity;
+  }
+  if (entity.kind === "line") {
+    const ends = clipSegment(entity.a, entity.b, window);
+    return ends ? { ...entity, a: ends[0], b: ends[1] } : null;
+  }
+  if (entity.kind === "polyline") {
+    return clipPolyline(entity, window);
+  }
+  if (entity.kind === "text") {
+    return pointInside(entity.p, window) ? entity : null;
+  }
+  return null;
+}
+
+function clipPolyline(entity: Extract<GeomEntity, { kind: "polyline" }>, window: Box): GeomEntity | null {
+  if (entity.closed && (entity.fill || entity.pattern !== undefined)) {
+    const points = clipPolygon(entity.points, window);
+    return points.length >= 3 ? { ...entity, points, closed: true } : null;
+  }
+  const points: Point[] = [];
+  for (let i = 1; i < entity.points.length; i += 1) {
+    const ends = clipSegment(entity.points[i - 1], entity.points[i], window);
+    if (!ends) {
+      continue;
+    }
+    if (!points.length || points[points.length - 1].x !== ends[0].x || points[points.length - 1].y !== ends[0].y) {
+      points.push(ends[0]);
+    }
+    points.push(ends[1]);
+  }
+  return points.length >= 2 ? { ...entity, points, closed: false } : null;
+}
+
+function clipPolygon(points: Point[], window: Box) {
+  let output = points;
+  const edges: { inside: (point: Point) => boolean; cross: (a: Point, b: Point) => Point }[] = [
+    {
+      inside: (point) => point.x >= window.minX,
+      cross: (a, b) => crossAt(a, b, (window.minX - a.x) / (b.x - a.x)),
+    },
+    {
+      inside: (point) => point.x <= window.maxX,
+      cross: (a, b) => crossAt(a, b, (window.maxX - a.x) / (b.x - a.x)),
+    },
+    {
+      inside: (point) => point.y >= window.minY,
+      cross: (a, b) => crossAt(a, b, (window.minY - a.y) / (b.y - a.y)),
+    },
+    {
+      inside: (point) => point.y <= window.maxY,
+      cross: (a, b) => crossAt(a, b, (window.maxY - a.y) / (b.y - a.y)),
+    },
+  ];
+  for (const edge of edges) {
+    const input = output;
+    output = [];
+    for (let i = 0; i < input.length; i += 1) {
+      const current = input[i];
+      const previous = input[(i + input.length - 1) % input.length];
+      const currentIn = edge.inside(current);
+      const previousIn = edge.inside(previous);
+      if (currentIn) {
+        if (!previousIn) {
+          output.push(edge.cross(previous, current));
+        }
+        output.push(current);
+      } else if (previousIn) {
+        output.push(edge.cross(previous, current));
+      }
+    }
+  }
+  return output;
+}
+
+function crossAt(a: Point, b: Point, t: number): Point {
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+}
+
+function clipSegment(a: Point, b: Point, window: Box): [Point, Point] | null {
+  let ax = a.x;
+  let ay = a.y;
+  let bx = b.x;
+  let by = b.y;
+  let codeA = outCode(ax, ay, window);
+  let codeB = outCode(bx, by, window);
+  for (let step = 0; step < 8; step += 1) {
+    if ((codeA | codeB) === 0) {
+      return [
+        { x: ax, y: ay },
+        { x: bx, y: by },
+      ];
+    }
+    if ((codeA & codeB) !== 0) {
+      return null;
+    }
+    const outside = codeA || codeB;
+    let x = 0;
+    let y = 0;
+    if (outside & 8) {
+      x = ax + ((bx - ax) * (window.maxY - ay)) / (by - ay);
+      y = window.maxY;
+    } else if (outside & 4) {
+      x = ax + ((bx - ax) * (window.minY - ay)) / (by - ay);
+      y = window.minY;
+    } else if (outside & 2) {
+      y = ay + ((by - ay) * (window.maxX - ax)) / (bx - ax);
+      x = window.maxX;
+    } else {
+      y = ay + ((by - ay) * (window.minX - ax)) / (bx - ax);
+      x = window.minX;
+    }
+    if (outside === codeA) {
+      ax = x;
+      ay = y;
+      codeA = outCode(ax, ay, window);
+    } else {
+      bx = x;
+      by = y;
+      codeB = outCode(bx, by, window);
+    }
+  }
+  return null;
+}
+
+function outCode(x: number, y: number, window: Box) {
+  let code = 0;
+  if (x < window.minX) {
+    code |= 1;
+  } else if (x > window.maxX) {
+    code |= 2;
+  }
+  if (y < window.minY) {
+    code |= 4;
+  } else if (y > window.maxY) {
+    code |= 8;
+  }
+  return code;
+}
+
+function pointInside(point: Point, window: Box) {
+  return (
+    point.x >= window.minX &&
+    point.x <= window.maxX &&
+    point.y >= window.minY &&
+    point.y <= window.maxY
+  );
+}
+
 function modelSpaceFallback(blocks: Map<string, BlockDef>) {
   for (const [name, block] of blocks) {
     if (name.replace(/[$*]/g, "").toLowerCase() === "model_space") {
@@ -1267,6 +1715,7 @@ function transformEntity(
       ...entity,
       p: map(entity.p),
       height: entity.height * Math.abs(insert.sy || 1),
+      ...(entity.width !== undefined ? { width: entity.width * Math.abs(insert.sx || 1) } : {}),
     };
   }
   const scale = Math.max(Math.abs(insert.sx || 1), Math.abs(insert.sy || 1));
@@ -1323,12 +1772,14 @@ function parseDwg(bytes: ArrayBuffer): DrawingExtract {
     value,
   }));
 
+  const strings = texts.map((item) => item.value);
   return {
     format: "dwg",
     texts,
-    strings: texts.map((item) => item.value),
+    strings,
     entityCounts: { STRING: texts.length },
     geometry: [],
+    sheets: [{ name: "Sheet 1", geometry: [], texts, strings }],
   };
 }
 
@@ -1414,7 +1865,8 @@ function uniqueStrings(values: string[]) {
 
 function stripDxfMarkup(value: string) {
   return value
-    .replace(/\\[Pp]~?;/g, " ")
+    .replace(/\\P/g, "\n")
+    .replace(/\\~/g, " ")
     .replace(/\\[A-Za-z][^;]*;/g, "")
     .replace(/[{}]/g, "")
     .replace(/%%[UuOo]/g, "");
