@@ -34,6 +34,78 @@ describe("occupancy from drawing", () => {
       "medical offices",
     );
   });
+
+  it("uses the named class instead of a paper size or a door tag", () => {
+    const read = occupancyFromText(
+      "Jakupa-Titleblock-Standard-A1 D1 - Internal door H3 - Domestic Residence",
+    );
+    assert.equal(read.code, "H3");
+    assert.equal(read.note, "domestic residence");
+  });
+
+  it("does not read a height callout as the industrial class", () => {
+    assert.equal(occupancyFromText("D1 - Internal door D1 3140 high @ 2500 above NGL").code, "—");
+  });
+});
+
+function notes(lines: string[]) {
+  const texts = lines.map((value) => ({ kind: "text" as const, value }));
+  return auditFromDrawing("notes.dxf", {
+    format: "dxf",
+    texts,
+    strings: lines,
+    entityCounts: {},
+    geometry: [],
+    sheets: [],
+  });
+}
+
+describe("blank prototype notes", () => {
+  it("fails empty title fields, a quoted stair, and an engineer obligation", () => {
+    const audit = notes([
+      "PROPOSED COVERAGE AREA:",
+      "SITE AREA:",
+      "Permissable Coverage = N/A",
+      "STAIRCASE Min tread = 250mm to comply with SANS 10400",
+      "All structural work must be checked by a structural engineer",
+      "Ground Storey Fenestration Calculations",
+      "13,5%",
+    ]);
+    const failed = audit.failed.map((row) => row.id);
+    assert.equal(audit.occupancy, "—");
+    assert.ok(failed.includes("titleblocks"));
+    assert.equal(audit.failed.find((row) => row.id === "titleblocks")?.detail, "Title block fields empty");
+    assert.equal(audit.failed.find((row) => row.id === "coverage")?.detail, "Coverage blank");
+    assert.equal(audit.failed.find((row) => row.id === "site-area")?.detail, "Site area blank");
+    assert.equal(audit.failed.find((row) => row.id === "part-m")?.detail, "Stair dims missing");
+    assert.equal(audit.failed.find((row) => row.id === "eng-packs")?.detail, "Engineering obligation only");
+    assert.equal(audit.passed.find((row) => row.id === "xa-fenestration")?.detail, "Ground 13.5%");
+  });
+
+  it("reads the fenestration table percent, not a coverage ratio or a stair tolerance", () => {
+    const audit = notes([
+      "PROPOSED NEW DWELLING AREA: 66 m2",
+      "PROPOSED G/FLOOR AREA: 18 sqm x3",
+      "STAIRCASE",
+      "6mm variance over the full height of the staircase.",
+      "Ground Storey Fenestration Calculations PER UNIT",
+      "% Fenestration Area",
+      "10,13%",
+      "% Ventilation Area",
+      "= 14,04%",
+      "137,45 sqm = 60%",
+      "less than equal to 20%",
+    ]);
+    assert.equal(
+      audit.failed.find((row) => row.id === "titleblocks")?.detail,
+      "Title block fields empty",
+    );
+    assert.equal(audit.failed.find((row) => row.id === "part-m")?.detail, "Stair dims missing");
+    assert.equal(
+      audit.passed.find((row) => row.id === "xa-fenestration")?.detail,
+      "Ground 10.13%",
+    );
+  });
 });
 
 describe("marine-drive fixture", () => {

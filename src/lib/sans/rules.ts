@@ -112,9 +112,8 @@ export const SANS_RULES: Rule[] = [
     part: "A",
     check: "Titleblocks",
     run: (ctx) => {
-      const titles = ctx.extract.texts.filter((line) =>
-        /proposed|titleblock|title block/i.test(line.value),
-      );
+      const proposed = ctx.extract.texts.filter((line) => /proposed/i.test(line.value));
+      const titles = proposed.filter((line) => !isFieldLabel(line.value));
       const unique = [...new Set(titles.map((line) => line.value.toLowerCase()))];
       if (unique.length > 1) {
         return {
@@ -127,14 +126,25 @@ export const SANS_RULES: Rule[] = [
           })),
         };
       }
-      if (!titles.length) {
-        return { status: "skip" };
+      if (unique.length === 1) {
+        return {
+          status: "pass",
+          detail: "One project title found",
+          evidence: [{ quote: titles[0].value, layer: titles[0].layer }],
+        };
       }
-      return {
-        status: "pass",
-        detail: "One project title found",
-        evidence: [{ quote: titles[0].value, layer: titles[0].layer }],
-      };
+      if (proposed.length) {
+        return {
+          status: "fail",
+          detail: "Title block fields empty",
+          adjust: "Fill the title block. Proposed coverage, dwellings, and floor area are still blank.",
+          evidence: proposed.slice(0, 4).map((line) => ({
+            quote: line.value,
+            layer: line.layer,
+          })),
+        };
+      }
+      return { status: "skip" };
     },
   },
   {
@@ -186,17 +196,20 @@ export const SANS_RULES: Rule[] = [
     part: "R",
     check: "Stormwater",
     run: (ctx) => {
-      if (/soak\s*pit|stormwater|storm water/i.test(ctx.blob)) {
+      const route = stormwaterRoute(ctx.blob);
+      if (route) {
         return {
           status: "pass",
-          detail: "Soakpit / stormwater noted",
+          detail: route,
           evidence: quotes(ctx, /soak\s*pit|stormwater|storm water/i),
         };
       }
       return {
         status: "fail",
-        detail: "Stormwater / soakpit missing",
-        adjust: "Add Part R stormwater / soakpit information to the set.",
+        detail: /stormwater|storm water/i.test(ctx.blob)
+          ? "Stormwater mentioned, route not shown"
+          : "Stormwater / soakpit missing",
+        adjust: "Show where stormwater goes: a soakpit, a pipe, or a discharge point. Quoting Part R is not the route.",
       };
     },
   },
@@ -205,19 +218,19 @@ export const SANS_RULES: Rule[] = [
     part: "M",
     check: "Stairs",
     run: (ctx) => {
-      const hasStair = /stair/i.test(ctx.blob);
-      const hasDims = /\b\d+(\.\d+)?\s*(mm|m)\b/i.test(ctx.blob) && hasStair;
-      if (hasStair && hasDims) {
+      const stated = statedStair(ctx.blob);
+      if (stated) {
         return {
           status: "pass",
-          detail: "Part M dimensions noted",
-          evidence: quotes(ctx, /stair/i),
+          detail: stated,
+          evidence: quotes(ctx, /stair|riser|going|tread/i),
         };
       }
+      const hasStair = /stair/i.test(ctx.blob);
       return {
         status: "fail",
         detail: hasStair ? "Stair dims missing" : "Stair dimensions not found",
-        adjust: "Dimension stairs to Part M on the drawings.",
+        adjust: "State this stair's riser and going. A minimum or maximum copied from Part M is not the stair.",
         evidence: hasStair ? quotes(ctx, /stair/i) : undefined,
       };
     },
@@ -336,14 +349,23 @@ export const SANS_RULES: Rule[] = [
     part: "Zoning",
     check: "Coverage",
     run: (ctx) => {
-      const match = ctx.blob.match(/coverage[^\n]{0,40}/i);
-      if (!match) {
+      const lines = linesMatching(ctx.blob, /coverage/i);
+      if (!lines.length) {
         return { status: "skip" };
+      }
+      const filled = lines.find((line) => filledMeasure(line));
+      if (!filled) {
+        return {
+          status: "fail",
+          detail: "Coverage blank",
+          adjust: "Fill the coverage figure. A heading or N/A is an empty field.",
+          evidence: lines.slice(0, 3).map((quote) => ({ quote })),
+        };
       }
       return {
         status: "pass",
-        detail: match[0].replace(/\s+/g, " ").trim(),
-        evidence: [{ quote: match[0].replace(/\s+/g, " ").trim() }],
+        detail: filled,
+        evidence: [{ quote: filled }],
       };
     },
   },
@@ -352,14 +374,23 @@ export const SANS_RULES: Rule[] = [
     part: "A",
     check: "Site area",
     run: (ctx) => {
-      const match = ctx.blob.match(/site\s*area[^\n]{0,32}/i);
-      if (!match) {
+      const lines = linesMatching(ctx.blob, /site\s*area/i);
+      if (!lines.length) {
         return { status: "skip" };
+      }
+      const filled = lines.find((line) => filledMeasure(line));
+      if (!filled) {
+        return {
+          status: "fail",
+          detail: "Site area blank",
+          adjust: "Fill the site area. The heading on its own is an empty field.",
+          evidence: lines.slice(0, 3).map((quote) => ({ quote })),
+        };
       }
       return {
         status: "pass",
-        detail: match[0].replace(/\s+/g, " ").trim(),
-        evidence: [{ quote: match[0].replace(/\s+/g, " ").trim() }],
+        detail: filled,
+        evidence: [{ quote: filled }],
       };
     },
   },
@@ -410,8 +441,9 @@ export const SANS_RULES: Rule[] = [
         };
       }
       return {
-        status: "pass",
-        detail: "Engineering noted",
+        status: "fail",
+        detail: "Engineering obligation only",
+        adjust: "The note that an engineer must check the work is not the pack. Include the engineering drawings.",
         evidence: quotes(ctx, /engineer/i),
       };
     },
@@ -497,12 +529,18 @@ type StoreyFen = {
 function parseStoreyFenestration(blob: string): StoreyFen[] {
   const found: StoreyFen[] = [];
   for (const match of blob.matchAll(
-    /(L\/G|Lower\s*ground|Ground|First|Second|LG)\D{0,28}(\d+(?:\.\d+)?)\s*%/gi,
+    /(L\/G|Lower\s*ground|Ground|First|Second|LG)\D{0,28}(\d+(?:[.,]\d+)?)\s*%/gi,
   )) {
     found.push({
       storey: normalizeStorey(match[1]),
-      percent: Number.parseFloat(match[2]),
+      percent: Number.parseFloat(match[2].replace(",", ".")),
     });
+  }
+  if (!found.length && /fenestration/i.test(blob)) {
+    const percent = fenestrationPercent(blob);
+    if (percent !== null) {
+      found.push({ storey: "Ground", percent });
+    }
   }
 
   for (const row of found) {
@@ -592,6 +630,68 @@ export function evaluateRules(ctx: AuditContext) {
   }
 
   return { passed, failed };
+}
+
+function isFieldLabel(value: string) {
+  const line = value.replace(/\s+/g, " ").trim();
+  return (
+    /coverage|proposed\s+dwellings|floor\s*area|site\s*area|title\s*block|calculation|input the/i.test(line) ||
+    /proposed\b.+\b(area|dwellings)\b/i.test(line) ||
+    /:\s*$/.test(line)
+  );
+}
+
+function linesMatching(blob: string, pattern: RegExp) {
+  return blob
+    .split("\n")
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter((line) => pattern.test(line));
+}
+
+function filledMeasure(line: string) {
+  if (/=\s*n\/a\b|:\s*$|calculation$/i.test(line)) {
+    return "";
+  }
+  if (/\d/.test(line) || /under\s+(?:limit|\d)/i.test(line)) {
+    return line;
+  }
+  return "";
+}
+
+function stormwaterRoute(blob: string) {
+  if (/soak\s*pit/i.test(blob)) {
+    return "Soakpit noted";
+  }
+  const route = linesMatching(blob, /storm\s*water|stormwater/i).find(
+    (line) =>
+      /discharge|pipe|soak|street|municipal|catch/i.test(line) &&
+      !/comply|nuisance|temporary/i.test(line),
+  );
+  return route ?? "";
+}
+
+function statedStair(blob: string) {
+  const line = linesMatching(blob, /riser|going|tread/i).find(
+    (row) =>
+      /\d+(?:[.,]\d+)?\s*mm/i.test(row) &&
+      !/\b(min(?:imum)?|max(?:imum)?|not less|not more|comply)\b/i.test(row),
+  );
+  return line ?? "";
+}
+
+function fenestrationPercent(blob: string) {
+  let percent: number | null = null;
+  for (const line of linesMatching(blob, /%/)) {
+    if (/less than|under|below|equal to|<=|ventilat|sqm|coverage/i.test(line)) {
+      continue;
+    }
+    const bare = line.match(/^(\d+(?:[.,]\d+)?)\s*%$/);
+    if (!bare) {
+      continue;
+    }
+    percent = Number.parseFloat(bare[1].replace(",", "."));
+  }
+  return percent;
 }
 
 function quotes(ctx: AuditContext, pattern: RegExp) {
