@@ -963,6 +963,97 @@ EOF
   });
 });
 
+describe("paper layouts", () => {
+  it("keeps each paper layout as its own sheet", () => {
+    const extract = fromText(`0
+SECTION
+2
+BLOCKS
+0
+BLOCK
+2
+*Paper_Space0
+70
+0
+10
+0.0
+20
+0.0
+30
+0.0
+3
+*Paper_Space0
+1
+
+0
+LINE
+8
+OTHER
+10
+0.0
+20
+0.0
+11
+40.0
+21
+0.0
+0
+ENDBLK
+0
+ENDSEC
+0
+SECTION
+2
+ENTITIES
+0
+LINE
+8
+BORDER
+67
+1
+10
+0.0
+20
+0.0
+11
+100.0
+21
+0.0
+0
+VIEWPORT
+67
+1
+10
+50.0
+20
+25.0
+40
+80.0
+41
+40.0
+12
+0.0
+22
+0.0
+45
+100.0
+68
+1
+69
+2
+0
+ENDSEC
+0
+EOF
+`);
+    assert.equal(extract.sheets.length, 2);
+    assert.equal(extract.sheets[0].name, "Sheet 1");
+    assert.ok(extract.sheets[0].geometry.some((entity) => entity.kind === "line" && entity.layer === "BORDER"));
+    assert.ok(extract.sheets[1].geometry.some((entity) => entity.kind === "line" && entity.layer === "OTHER"));
+    assert.ok(!extract.sheets[0].geometry.some((entity) => entity.kind === "line" && entity.layer === "OTHER"));
+  });
+});
+
 describe("mtext height", () => {
   it("keeps the character height when an embedded object repeats group 40", () => {
     const extract = fromText(`0

@@ -39,12 +39,20 @@ export type GeomEntity =
       width?: number;
     });
 
+export type DrawingSheet = {
+  name: string;
+  geometry: GeomEntity[];
+  texts: DrawingText[];
+  strings: string[];
+};
+
 export type DrawingExtract = {
   format: "dxf" | "dwg" | "unknown";
   texts: DrawingText[];
   strings: string[];
   entityCounts: Record<string, number>;
   geometry: GeomEntity[];
+  sheets: DrawingSheet[];
 };
 
 const JUNK =
@@ -112,6 +120,7 @@ type RawEntity = GeomEntity | InsertEntity;
 type BlockDef = {
   base: Point;
   entities: RawEntity[];
+  viewports: SheetViewport[];
 };
 
 type SheetViewport = {
@@ -139,6 +148,8 @@ function parseDxf(content: string): DrawingExtract {
   const model: RawEntity[] = [];
   const paper: RawEntity[] = [];
   const viewports: SheetViewport[] = [];
+  const layoutNames: string[] = [];
+  let layoutTitle = false;
   let headerVar = "";
   let ltScale = 1;
   let inPaper = false;
@@ -146,7 +157,12 @@ function parseDxf(content: string): DrawingExtract {
 
   let section = "";
   let expectSection = false;
-  let openBlock: { name: string; base: Point; entities: RawEntity[] } | null = null;
+  let openBlock: {
+    name: string;
+    base: Point;
+    entities: RawEntity[];
+    viewports: SheetViewport[];
+  } | null = null;
   let entity = "";
   let value = "";
   let extra = "";
@@ -270,7 +286,9 @@ function parseDxf(content: string): DrawingExtract {
     const drawnLayer = layer || undefined;
     if (entity === "VIEWPORT") {
       const viewport = viewportFrom(chunks);
-      if (inPaper && viewport) {
+      if (viewport && openBlock) {
+        openBlock.viewports.push(viewport);
+      } else if (viewport && inPaper) {
         viewports.push(viewport);
       }
       return;
@@ -464,6 +482,7 @@ function parseDxf(content: string): DrawingExtract {
         blocks.set(openBlock.name, {
           base: openBlock.base,
           entities: openBlock.entities,
+          viewports: openBlock.viewports,
         });
       }
       if (next === "ENDBLK") {
@@ -477,7 +496,7 @@ function parseDxf(content: string): DrawingExtract {
         expectSection = true;
       }
       if (next === "BLOCK" && section === "BLOCKS") {
-        openBlock = { name: "", base: { x: 0, y: 0 }, entities: [] };
+        openBlock = { name: "", base: { x: 0, y: 0 }, entities: [], viewports: [] };
       }
       entityCounts[next] = (entityCounts[next] ?? 0) + 1;
       resetEntity(next, false);
@@ -490,8 +509,17 @@ function parseDxf(content: string): DrawingExtract {
       continue;
     }
 
-    if (code === 1) {
+    if (code === 100 && raw.trim() === "AcDbLayout") {
+      layoutTitle = true;
+    } else if (code === 1) {
       value = raw;
+      if (entity === "LAYOUT" && layoutTitle) {
+        const name = raw.trim();
+        layoutTitle = false;
+        if (name && !/^model$/i.test(name)) {
+          layoutNames.push(name);
+        }
+      }
     } else if (code === 3) {
       extra += raw;
     } else if (code === 8) {
@@ -635,17 +663,82 @@ function parseDxf(content: string): DrawingExtract {
   flush();
 
   const placed = placeInserts(model, blocks);
-  const sheet = composeSheet(placed, placeInserts(paper, blocks), viewports);
-  const drawn = sheet ?? placed;
-  const fallback = drawn.some(isDrawn) ? drawn : modelSpaceFallback(blocks);
-  const geometry = fallback.length ? fallback : drawn;
+  const activePaper = placeInserts(paper, blocks);
+  const active = composeSheet(placed, activePaper, viewports) ?? placed;
+  const fallback = active.some(isDrawn) ? active : modelSpaceFallback(blocks);
+  const geometry = fallback.length ? fallback : active;
+  const collected = collectSheets(layoutNames, geometry, placed, blocks);
+  const sheets = collected.length === 1 ? [withFileText(collected[0], texts)] : collected;
+  const first = sheets[0];
 
   return {
     format: "dxf",
+    texts: sheets.length === 1 ? texts : first.texts,
+    strings:
+      sheets.length === 1
+        ? uniqueStrings(texts.map((item) => item.value.replace(/\s+/g, " ")))
+        : first.strings,
+    entityCounts,
+    geometry: first.geometry,
+    sheets,
+  };
+}
+
+function collectSheets(
+  layoutNames: string[],
+  active: GeomEntity[],
+  model: GeomEntity[],
+  blocks: Map<string, BlockDef>,
+): DrawingSheet[] {
+  const sheets: DrawingSheet[] = [];
+  const push = (geometry: GeomEntity[]) => {
+    const name = layoutNames[sheets.length] ?? `Sheet ${sheets.length + 1}`;
+    sheets.push(sheetFromGeometry(name, geometry));
+  };
+  if (active.some(isDrawn)) {
+    push(active);
+  }
+  const extras = [...blocks.entries()]
+    .filter(([name]) => /^\*Paper_Space\d+$/i.test(name))
+    .sort(([a], [b]) => paperBlockOrder(a) - paperBlockOrder(b));
+  for (const [, block] of extras) {
+    const paper = placeInserts(block.entities, blocks);
+    const composed = composeSheet(model, paper, block.viewports);
+    const geometry = composed ?? paper;
+    if (geometry.some(isDrawn)) {
+      push(geometry);
+    }
+  }
+  if (!sheets.length) {
+    push(active);
+  }
+  return sheets;
+}
+
+function withFileText(sheet: DrawingSheet, texts: DrawingText[]): DrawingSheet {
+  return {
+    ...sheet,
     texts,
     strings: uniqueStrings(texts.map((item) => item.value.replace(/\s+/g, " "))),
-    entityCounts,
+  };
+}
+
+function paperBlockOrder(name: string) {
+  const match = name.match(/(\d+)$/);
+  return match ? Number(match[1]) : 0;
+}
+
+function sheetFromGeometry(name: string, geometry: GeomEntity[]): DrawingSheet {
+  const texts = geometry.flatMap((entity) =>
+    entity.kind === "text"
+      ? [{ kind: "text" as const, value: entity.value, layer: entity.layer }]
+      : [],
+  );
+  return {
+    name,
     geometry,
+    texts,
+    strings: uniqueStrings(texts.map((item) => item.value.replace(/\s+/g, " "))),
   };
 }
 
@@ -1679,12 +1772,14 @@ function parseDwg(bytes: ArrayBuffer): DrawingExtract {
     value,
   }));
 
+  const strings = texts.map((item) => item.value);
   return {
     format: "dwg",
     texts,
-    strings: texts.map((item) => item.value),
+    strings,
     entityCounts: { STRING: texts.length },
     geometry: [],
+    sheets: [{ name: "Sheet 1", geometry: [], texts, strings }],
   };
 }
 

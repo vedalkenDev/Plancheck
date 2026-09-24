@@ -49,7 +49,14 @@ function sheet(inkOnLeft: boolean): DrawingExtract {
       });
     }
   }
-  return { format: "dxf", texts: [], strings: [], entityCounts: {}, geometry };
+  return {
+    format: "dxf",
+    texts: [],
+    strings: [],
+    entityCounts: {},
+    geometry,
+    sheets: [{ name: "Sheet 1", geometry, texts: [], strings: [] }],
+  };
 }
 
 describe("stampAudit", () => {
