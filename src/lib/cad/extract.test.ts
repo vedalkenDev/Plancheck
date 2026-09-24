@@ -891,6 +891,78 @@ describe("sheet style sample", () => {
   });
 });
 
+describe("paper sheet", () => {
+  it("fits the sheet and the model window inside each viewport", () => {
+    const extract = fromText(`0
+SECTION
+2
+ENTITIES
+0
+LINE
+8
+WALL
+10
+0.0
+20
+0.0
+11
+1000.0
+21
+0.0
+0
+LINE
+8
+BORDER
+67
+1
+10
+0.0
+20
+0.0
+11
+100.0
+21
+0.0
+0
+VIEWPORT
+67
+1
+10
+50.0
+20
+25.0
+40
+80.0
+41
+40.0
+12
+500.0
+22
+0.0
+45
+100.0
+68
+1
+69
+2
+0
+ENDSEC
+0
+EOF
+`);
+    const wall = extract.geometry.find((entity) => entity.kind === "line" && entity.layer === "WALL");
+    const border = extract.geometry.find((entity) => entity.kind === "line" && entity.layer === "BORDER");
+    assert.ok(wall && wall.kind === "line");
+    assert.ok(border && border.kind === "line");
+    assert.ok(Math.abs(wall.a.x - 10) < 0.01);
+    assert.ok(Math.abs(wall.b.x - 90) < 0.01);
+    assert.ok(Math.abs(wall.a.y - 25) < 0.01);
+    const bounds = geometryBounds(extract.geometry);
+    assert.ok(bounds);
+    assert.ok(bounds.maxX - bounds.minX < 200);
+  });
+});
+
 describe("sample drawings", () => {
   it("still frames the marine drive site", () => {
     const bytes = readFileSync("public/samples/marine-drive.dxf");
