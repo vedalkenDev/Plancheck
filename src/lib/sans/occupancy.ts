@@ -34,19 +34,42 @@ export const OCCUPANCY_CLASSES: Record<string, string> = {
 };
 
 const LABELED = /occupancy\s*[:#]?\s*([A-HJ][1-5])(?!\d)/i;
-const BARE = /\b([A-HJ][1-5])(?!\d)\b/;
 
 export function occupancyFromText(blob: string) {
+  const named = namedClass(blob);
   const labeled = blob.match(LABELED);
-  const bare = blob.match(BARE);
-  const code = labeled?.[1]?.toUpperCase() ?? bare?.[1]?.toUpperCase() ?? null;
+  const code = named?.code ?? labeled?.[1]?.toUpperCase() ?? null;
   if (!code) {
     return { code: "—", note: "not found" };
   }
-
   if (code === "G1" && /medical/i.test(blob)) {
     return { code, note: "medical offices" };
   }
+  return { code, note: named?.note ?? OCCUPANCY_CLASSES[code] ?? "from the drawing" };
+}
 
-  return { code, note: OCCUPANCY_CLASSES[code] ?? "from the drawing" };
+function namedClass(blob: string) {
+  const hits = [...blob.matchAll(/\b([A-HJ][1-5])(?!\d)/g)];
+  let best: { code: string; note: string; words: number } | null = null;
+  for (let i = 0; i < hits.length; i++) {
+    const code = hits[i][1].toUpperCase();
+    const note = OCCUPANCY_CLASSES[code];
+    if (!note) {
+      continue;
+    }
+    const start = (hits[i].index ?? 0) + hits[i][0].length;
+    const end = hits[i + 1]?.index ?? blob.length;
+    const phrase = blob
+      .slice(start, end)
+      .replace(/^\s*[-–—:]?\s*/, "")
+      .toLowerCase();
+    const words = note.split(/\s+/).filter((word) => word.length >= 5 && phrase.includes(word));
+    if (!words.length) {
+      continue;
+    }
+    if (!best || words.length > best.words) {
+      best = { code, note, words: words.length };
+    }
+  }
+  return best;
 }
