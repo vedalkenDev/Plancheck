@@ -141,6 +141,7 @@ function parseDxf(content: string): DrawingExtract {
   let headerVar = "";
   let ltScale = 1;
   let inPaper = false;
+  let embedded = false;
 
   let section = "";
   let expectSection = false;
@@ -224,6 +225,7 @@ function parseDxf(content: string): DrawingExtract {
     textRot = null;
     chunks = [];
     inPaper = false;
+    embedded = false;
     if (!keepPolyline) {
       layer = "";
       flags = 0;
@@ -425,6 +427,14 @@ function parseDxf(content: string): DrawingExtract {
     }
     const raw = lines[i + 1] ?? "";
     i += 1;
+
+    if (code === 101) {
+      embedded = true;
+      continue;
+    }
+    if (embedded && code !== 0) {
+      continue;
+    }
 
     if (
       code !== 0 &&

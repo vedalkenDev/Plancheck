@@ -963,6 +963,43 @@ EOF
   });
 });
 
+describe("mtext height", () => {
+  it("keeps the character height when an embedded object repeats group 40", () => {
+    const extract = fromText(`0
+SECTION
+2
+ENTITIES
+0
+MTEXT
+8
+Text
+10
+10.0
+20
+10.0
+40
+2.5
+41
+140.0
+1
+Note about the roof
+101
+Embedded Object
+40
+140.0
+41
+0.0
+0
+ENDSEC
+0
+EOF
+`);
+    const note = extract.geometry.find((entity) => entity.kind === "text");
+    assert.ok(note && note.kind === "text");
+    assert.equal(note.height, 2.5);
+  });
+});
+
 describe("sample drawings", () => {
   it("still frames the marine drive site", () => {
     const bytes = readFileSync("public/samples/marine-drive.dxf");
