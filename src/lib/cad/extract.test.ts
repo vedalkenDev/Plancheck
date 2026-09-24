@@ -873,6 +873,24 @@ EOF
   });
 });
 
+describe("sheet style sample", () => {
+  it("contains a dashed beam, a hatched slab, and a leader", () => {
+    const bytes = readFileSync("public/samples/sheet-styles.dxf");
+    const copy = new ArrayBuffer(bytes.byteLength);
+    new Uint8Array(copy).set(bytes);
+    const extract = extractDrawing("sheet-styles.dxf", copy);
+    const beam = extract.geometry.find((entity) => entity.kind === "line" && entity.layer === "BEAM");
+    assert.ok(beam && beam.kind === "line" && beam.dash && beam.dash.length >= 2);
+    const slab = extract.geometry.find((entity) => entity.kind === "polyline" && entity.pattern !== undefined);
+    assert.ok(slab && slab.kind === "polyline");
+    const leader = extract.geometry.find(
+      (entity) => entity.kind === "polyline" && entity.layer === "NOTE" && !entity.closed,
+    );
+    assert.ok(leader && leader.kind === "polyline" && leader.points.length >= 3);
+    assert.ok(extract.strings.includes("Hidden beam"));
+  });
+});
+
 describe("sample drawings", () => {
   it("still frames the marine drive site", () => {
     const bytes = readFileSync("public/samples/marine-drive.dxf");
