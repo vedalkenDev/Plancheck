@@ -206,13 +206,14 @@ export const SANS_RULES: Rule[] = [
     part: "M",
     check: "Stairs",
     run: (ctx) => {
-      const hasStair = /stair/i.test(ctx.blob);
-      const hasDims = /\b\d+(\.\d+)?\s*(mm|m)\b/i.test(ctx.blob) && hasStair;
-      if (hasStair && hasDims) {
+      const lines = ctx.blob.split("\n");
+      const hasStair = lines.some((line) => /stair/i.test(line));
+      const stated = lines.some((line) => statedStair(line));
+      if (stated) {
         return {
           status: "pass",
           detail: "Part M dimensions noted",
-          evidence: quotes(ctx, /stair/i),
+          evidence: quotes(ctx, /riser|going|tread/i),
         };
       }
       return {
@@ -418,6 +419,16 @@ export const SANS_RULES: Rule[] = [
     },
   },
 ];
+
+function statedStair(line: string) {
+  if (!/riser|going|tread/i.test(line)) {
+    return false;
+  }
+  if (!/\d+(?:[.,]\d+)?\s*mm/i.test(line)) {
+    return false;
+  }
+  return !/min|max|not less|not more|comply/i.test(line);
+}
 
 function xaFenestration(ctx: AuditContext): RuleResult {
   const storeys = parseStoreyFenestration(ctx.blob);

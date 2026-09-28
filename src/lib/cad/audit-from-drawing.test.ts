@@ -8,6 +8,17 @@ import { geometryBounds } from "./preview";
 import { stampAudit } from "./stamp";
 import { occupancyFromText } from "../sans/occupancy";
 
+function noteDrawing(lines: string[]) {
+  return {
+    format: "dxf" as const,
+    texts: lines.map((value) => ({ kind: "text" as const, value })),
+    strings: lines,
+    entityCounts: {},
+    geometry: [],
+    sheets: [],
+  };
+}
+
 function load(path: string, name: string) {
   const bytes = readFileSync(path);
   const extract = extractDrawing(
@@ -24,6 +35,29 @@ function load(path: string, name: string) {
 describe("occupancy from drawing", () => {
   it("does not treat regulation A20 as an occupancy class", () => {
     assert.equal(occupancyFromText("Form 1 Regulation A20").code, "—");
+  });
+
+  it("passes stairs only when a riser, going, or tread is stated", () => {
+    const stated = auditFromDrawing("stairs.dxf", noteDrawing([
+      "Stairs 170mm riser 250mm going Part M",
+    ]));
+    assert.ok(stated.passed.some((row) => row.id === "part-m"));
+
+    const obligation = auditFromDrawing("min-tread.dxf", noteDrawing([
+      "Min tread = 250mm to comply",
+    ]));
+    assert.equal(
+      obligation.passed.some((row) => row.id === "part-m"),
+      false,
+    );
+
+    const variance = auditFromDrawing("variance.dxf", noteDrawing([
+      "6mm variance over the full height of the staircase",
+    ]));
+    assert.equal(
+      variance.failed.find((row) => row.id === "part-m")?.detail,
+      "Stair dims missing",
+    );
   });
 
   it("reads H4 dwelling and G1 medical offices from labels", () => {
@@ -136,10 +170,7 @@ describe("marine-drive fixture", () => {
     assert.ok(notes.length > 1);
     assert.ok(notes.some((note) => note.value.includes("SANS 10400-XA 4.4")));
     assert.ok(notes.some((note) => note.value.includes("SANS 10400-M 4.2")));
-    assert.equal(
-      notes.some((note) => note.value.includes("7.05")),
-      false,
-    );
+    assert.ok(notes.some((note) => note.value.includes("7.05")));
     const frame = stamped.geometry.find(
       (entity) => entity.kind === "polyline" && entity.layer === "COUNCIL_CHECK",
     );

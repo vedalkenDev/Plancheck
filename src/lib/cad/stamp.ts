@@ -33,7 +33,7 @@ function stampLines(audit: AuditSample, column: number, height: number) {
     { layer: "COUNCIL_CHECK", text: audit.verdict, color: "#1c1917" },
     ...audit.failed.map((row) => ({
       layer: "COUNCIL_FIXES",
-      text: `${clauseStamp(row.clause)} ${row.check}.`,
+      text: `${clauseStamp(row.clause)} ${row.check}. ${row.adjust}`,
       color: "#b91c1c",
     })),
     ...audit.passed.map((row) => ({

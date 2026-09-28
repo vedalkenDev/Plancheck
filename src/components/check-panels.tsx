@@ -22,7 +22,7 @@ export const REVIEW_TABS: {
   },
   {
     id: "failed",
-    label: "Not approved",
+    label: "Not council-ready",
     icon: CircleX,
     iconClass: "text-red-400",
   },
