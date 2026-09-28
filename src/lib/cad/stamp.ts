@@ -12,9 +12,14 @@ export function stampAudit(extract: DrawingExtract, audit: AuditSample): Drawing
   const span = bounds
     ? Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY, 1)
     : 1000;
-  const height = textHeight(base, span);
-  const column = height * 42;
-  const lines = stampLines(audit, column, height);
+  const sheetW = bounds ? Math.max(bounds.maxX - bounds.minX, 1) : span;
+  const sheetH = bounds ? Math.max(bounds.maxY - bounds.minY, 1) : span;
+  const fitted = noteMetrics(textHeight(base, span), sheetW);
+  const height = fitted.height;
+  const column = fitted.column;
+  const leading = height * 1.45;
+  const maxLines = Math.max(1, Math.floor((sheetH * 0.45) / leading));
+  const lines = stampLines(audit, column, height).slice(0, maxLines);
   const placed = placeLines(base, bounds, lines, height, column);
 
   return {
@@ -28,12 +33,12 @@ function stampLines(audit: AuditSample, column: number, height: number) {
     { layer: "COUNCIL_CHECK", text: audit.verdict, color: "#1c1917" },
     ...audit.failed.map((row) => ({
       layer: "COUNCIL_FIXES",
-      text: `${clauseStamp(row.clause)} ${row.check}. ${row.adjust}`,
+      text: `${clauseStamp(row.clause)} ${row.check}.`,
       color: "#b91c1c",
     })),
     ...audit.passed.map((row) => ({
       layer: "COUNCIL_CHECK",
-      text: `${clauseStamp(row.clause)} ${row.check}. ${row.detail}`,
+      text: `${clauseStamp(row.clause)} ${row.check}.`,
       color: "#1c1917",
     })),
   ];
@@ -44,6 +49,12 @@ function stampLines(audit: AuditSample, column: number, height: number) {
       color: row.color,
     })),
   );
+}
+
+function noteMetrics(drawingHeight: number, sheetW: number) {
+  const maxW = Math.max(sheetW * 0.42, 1);
+  const height = Math.min(drawingHeight, maxW / (40 * 0.62));
+  return { height, column: Math.min(height * 42, maxW) };
 }
 
 function textHeight(geometry: GeomEntity[], span: number) {
@@ -68,14 +79,14 @@ function placeLines(
 ): GeomEntity[] {
   const leading = height * 1.45;
   const frame = bounds ?? { minX: 0, minY: 0, maxX: column * 2, maxY: lines.length * leading * 2 };
-  const sheetH = Math.max(frame.maxY - frame.minY, leading);
-  const fitted = lines.slice(0, Math.max(1, Math.floor(sheetH / leading)));
-  const blockH = Math.max(leading, fitted.length * leading);
-  const spot = clearestSpot(geometry, frame, column, blockH);
-  const roomW = Math.max(frame.maxX - frame.minX, column);
-  const roomH = Math.max(frame.maxY - frame.minY, blockH);
-  spot.x = Math.min(Math.max(spot.x, frame.minX), frame.minX + roomW - Math.min(column, roomW));
-  spot.y = Math.min(Math.max(spot.y, frame.minY), frame.minY + roomH - Math.min(blockH, roomH));
+  const spanW = Math.max(frame.maxX - frame.minX, column);
+  const spanH = Math.max(frame.maxY - frame.minY, leading);
+  const fitted = lines.slice(0, Math.max(1, Math.floor(spanH / leading)));
+  const blockW = Math.min(column, spanW);
+  const blockH = Math.min(spanH, Math.max(leading, fitted.length * leading));
+  const spot = clearestSpot(geometry, frame, blockW, blockH);
+  spot.x = Math.min(Math.max(spot.x, frame.minX), frame.minX + spanW - blockW);
+  spot.y = Math.min(Math.max(spot.y, frame.minY), frame.minY + spanH - blockH);
   const entities: GeomEntity[] = [
     {
       kind: "polyline",
@@ -84,8 +95,8 @@ function placeLines(
       closed: true,
       points: [
         { x: spot.x, y: spot.y },
-        { x: spot.x + column, y: spot.y },
-        { x: spot.x + column, y: spot.y + blockH },
+        { x: spot.x + blockW, y: spot.y },
+        { x: spot.x + blockW, y: spot.y + blockH },
         { x: spot.x, y: spot.y + blockH },
       ],
     },

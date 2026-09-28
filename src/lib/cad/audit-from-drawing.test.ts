@@ -134,6 +134,29 @@ describe("marine-drive fixture", () => {
         : [],
     );
     assert.ok(notes.length > 1);
+    assert.ok(notes.some((note) => note.value.includes("SANS 10400-XA 4.4")));
+    assert.ok(notes.some((note) => note.value.includes("SANS 10400-M 4.2")));
+    assert.equal(
+      notes.some((note) => note.value.includes("7.05")),
+      false,
+    );
+    const frame = stamped.geometry.find(
+      (entity) => entity.kind === "polyline" && entity.layer === "COUNCIL_CHECK",
+    );
+    assert.ok(frame && frame.kind === "polyline");
+    for (const point of frame.points) {
+      assert.ok(point.x >= bounds.minX && point.x <= bounds.maxX);
+      assert.ok(point.y >= bounds.minY && point.y <= bounds.maxY);
+    }
+    const frameW =
+      Math.max(...frame.points.map((point) => point.x)) -
+      Math.min(...frame.points.map((point) => point.x));
+    const frameH =
+      Math.max(...frame.points.map((point) => point.y)) -
+      Math.min(...frame.points.map((point) => point.y));
+    assert.ok(frameH <= (bounds.maxY - bounds.minY) * 0.45 + 1);
+    assert.ok(frameW <= bounds.maxX - bounds.minX);
+    assert.match(dxf, / 73\n {5}3/);
     for (const note of notes) {
       assert.ok(note.p.x >= bounds.minX && note.p.x <= bounds.maxX);
       assert.ok(note.p.y >= bounds.minY && note.p.y <= bounds.maxY);
