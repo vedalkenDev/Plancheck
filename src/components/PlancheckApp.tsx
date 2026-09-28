@@ -1,13 +1,15 @@
 "use client";
 
-import { FileUp, Loader2 } from "lucide-react";
-import { useId, useMemo, useRef, useState } from "react";
+import { FileUp, Loader2, X } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react";
+import { ChangeList, ReviewTitle } from "@/components/check-panels";
 import { DrawingPreview } from "@/components/DrawingPreview";
+import { ReviewDock } from "@/components/ReviewDock";
+import { SansBook } from "@/components/SansBook";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -19,7 +21,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { AuditSample, SampleDrawing } from "@/data/types";
-import { auditFromDrawing, buildAnnotatedDrawing, extractDrawing } from "@/lib/cad";
+import { auditFromDrawing, buildAnnotatedDrawing, extractDrawing, stampAudit } from "@/lib/cad";
+import { addVisibleText } from "@/lib/cad/annotate";
+import { dwgToDxf } from "@/lib/cad/dwg-to-dxf";
 import type { DrawingExtract } from "@/lib/cad/extract";
 import { DISCLAIMER, auditToReport, downloadBlob } from "@/lib/checklist";
 
@@ -31,11 +35,36 @@ const DRAWING_NAME = /\.(dwg|dxf)$/i;
 const MAX_BYTES = 40 * 1024 * 1024;
 const MIN_SPIN_MS = 700;
 
+function bytesOf(text: string) {
+  const encoded = new TextEncoder().encode(text);
+  const copy = new ArrayBuffer(encoded.byteLength);
+  new Uint8Array(copy).set(encoded);
+  return copy;
+}
+
+async function readDrawing(filename: string, bytes: ArrayBuffer) {
+  if (/\.dwg$/i.test(filename)) {
+    const dxf = await dwgToDxf(bytes);
+    if (dxf) {
+      return {
+        drawing: extractDrawing(filename.replace(/\.dwg$/i, ".dxf"), bytesOf(dxf)),
+        sourceText: dxf,
+      };
+    }
+  }
+
+  return {
+    drawing: extractDrawing(filename, bytes),
+    sourceText: new TextDecoder("utf-8", { fatal: false }).decode(bytes),
+  };
+}
+
 export function PlancheckApp({ samples }: PlancheckAppProps) {
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [audit, setAudit] = useState<AuditSample | null>(null);
   const [extract, setExtract] = useState<DrawingExtract | null>(null);
+  const [drawingName, setDrawingName] = useState("drawing");
+  const [sheetIndex, setSheetIndex] = useState(0);
   const [sourceText, setSourceText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
@@ -46,8 +75,8 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
   }
 
   function reset() {
-    setAudit(null);
     setExtract(null);
+    setSheetIndex(0);
     setSourceText(null);
     setError(null);
     setReading(false);
@@ -69,7 +98,7 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
 
     setError(null);
     setReading(true);
-    setAudit(null);
+    setSheetIndex(0);
     resetChecks();
 
     try {
@@ -79,11 +108,10 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
           setTimeout(resolve, MIN_SPIN_MS);
         }),
       ]);
-      const drawing = extractDrawing(file.name, bytes);
-      const result = auditFromDrawing(file.name, drawing);
+      const { drawing, sourceText: nextText } = await readDrawing(file.name, bytes);
+      setDrawingName(file.name);
       setExtract(drawing);
-      setSourceText(new TextDecoder("utf-8", { fatal: false }).decode(bytes));
-      setAudit(result);
+      setSourceText(nextText);
     } catch {
       setError("The drawing could not be read. Export it from CAD and try again.");
       setExtract(null);
@@ -103,7 +131,7 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
   async function loadSample(sample: SampleDrawing) {
     setError(null);
     setReading(true);
-    setAudit(null);
+    setSheetIndex(0);
     resetChecks();
     try {
       const [response] = await Promise.all([
@@ -116,12 +144,11 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
         throw new Error("sample");
       }
       const bytes = await response.arrayBuffer();
-      const drawing = extractDrawing(`${sample.id}.dxf`, bytes);
-      const result = auditFromDrawing(sample.label, drawing);
-      result.label = sample.label;
+      const filename = sample.href.split("/").pop() ?? `${sample.id}.dxf`;
+      const { drawing, sourceText: nextText } = await readDrawing(filename, bytes);
+      setDrawingName(sample.label);
       setExtract(drawing);
-      setSourceText(new TextDecoder("utf-8", { fatal: false }).decode(bytes));
-      setAudit(result);
+      setSourceText(nextText);
     } catch {
       setError("The sample drawing could not be loaded.");
     } finally {
@@ -129,8 +156,35 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
     }
   }
 
+  const viewed = useMemo(() => {
+    if (!extract) {
+      return null;
+    }
+    const sheets = extract.sheets.length
+      ? extract.sheets
+      : [
+          {
+            name: "Sheet 1",
+            geometry: extract.geometry,
+            texts: extract.texts,
+            strings: extract.strings,
+          },
+        ];
+    const index = Math.min(sheetIndex, sheets.length - 1);
+    const sheet = sheets[index];
+    const base: DrawingExtract = {
+      ...extract,
+      geometry: sheet.geometry,
+      texts: sheet.texts,
+      strings: sheet.strings,
+      sheets,
+    };
+    const result = auditFromDrawing(drawingName, base);
+    return { extract: stampAudit(base, result), audit: result, sheets, index };
+  }, [extract, sheetIndex, drawingName]);
+
   return (
-    <div className="flex min-h-svh flex-col bg-background">
+    <div className="flex min-h-svh flex-col bg-background lg:h-svh lg:overflow-hidden">
       <header className="flex h-16 shrink-0 items-center justify-between gap-4 border-b px-4 md:px-6">
         <h1 className="font-heading text-xl font-semibold tracking-tight md:text-2xl">
           Plancheck
@@ -146,8 +200,8 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
         </div>
       </header>
 
-      <div className="grid min-h-0 flex-1 lg:h-[calc(100svh-4rem)] lg:grid-cols-3">
-        <section className="flex min-h-[28rem] flex-col border-b p-4 lg:border-r lg:border-b-0 lg:p-6">
+      <div className="grid min-h-0 flex-1 lg:grid-cols-3">
+        <section className="flex min-h-[28rem] flex-col border-b p-4 lg:min-h-0 lg:overflow-hidden lg:border-r lg:border-b-0 lg:p-6">
           <input
             ref={inputRef}
             id={inputId}
@@ -156,23 +210,48 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
             accept=".dwg,.dxf,application/acad,image/vnd.dwg,image/vnd.dxf"
             onChange={(event) => void onFile(event.target.files?.[0])}
           />
-          {extract && !reading ? (
-            <div className="flex min-h-0 flex-1 flex-col gap-3 rounded-xl border-2 border-border bg-card p-4">
-              <div className="flex items-center justify-between gap-2">
-                <p className="truncate text-sm font-medium">
-                  {audit?.label ?? "Drawing"}
-                </p>
-                <Button type="button" variant="ghost" size="sm" onClick={reset}>
-                  Replace
-                </Button>
-              </div>
-              <div className="min-h-0 flex-1 overflow-hidden rounded-lg border">
-                <DrawingPreview
-                  extract={extract}
-                  label={audit?.label ?? "Drawing"}
-                />
-              </div>
-            </div>
+          {viewed && !reading ? (
+            <DrawingPane
+              extract={viewed.extract}
+              sourceText={sourceText}
+              label={viewed.audit.label}
+              audit={viewed.audit}
+              sheets={viewed.sheets}
+              sheetIndex={viewed.index}
+              onSheet={(index) => {
+                setSheetIndex(index);
+                resetChecks();
+              }}
+              done={done}
+              setDone={setDone}
+              onReplace={reset}
+              onChange={(next) => {
+                setExtract((current) => {
+                  if (!current?.sheets.length) {
+                    return next.extract;
+                  }
+                  const sheets = current.sheets.map((sheet, index) =>
+                    index === sheetIndex
+                      ? {
+                          name: sheet.name,
+                          geometry: next.extract.geometry,
+                          texts: next.extract.texts,
+                          strings: next.extract.strings,
+                        }
+                      : sheet,
+                  );
+                  const first = sheets[0];
+                  return {
+                    ...current,
+                    sheets,
+                    geometry: first.geometry,
+                    texts: first.texts,
+                    strings: first.strings,
+                  };
+                });
+                setSourceText(next.sourceText);
+              }}
+            />
           ) : (
             <label
               htmlFor={inputId}
@@ -225,22 +304,251 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
         </section>
 
         <section className="min-h-0 overflow-auto lg:col-span-2">
-            <div className="p-4 md:p-6">
-              {reading ? (
-                <InspectingState />
-              ) : audit ? (
-                <Analysis
-                  audit={audit}
-                  extract={extract}
-                  sourceText={sourceText}
-                  done={done}
-                  setDone={setDone}
-                />
-              ) : (
-                <EmptyState />
-              )}
-            </div>
+          <div className="space-y-6 p-4 md:p-6">
+            <SansBook />
+            {reading ? (
+              <InspectingState />
+            ) : viewed ? (
+              <Analysis
+                audit={viewed.audit}
+                extract={viewed.extract}
+                sheetName={viewed.sheets[viewed.index]?.name ?? "Sheet 1"}
+                sourceText={sourceText}
+                done={done}
+                setDone={setDone}
+              />
+            ) : (
+              <EmptyState />
+            )}
+          </div>
         </section>
+      </div>
+    </div>
+  );
+}
+
+function DrawingPane({
+  extract,
+  sourceText,
+  label,
+  audit,
+  sheets,
+  sheetIndex,
+  onSheet,
+  done,
+  setDone,
+  onReplace,
+  onChange,
+}: {
+  extract: DrawingExtract;
+  sourceText: string | null;
+  label: string;
+  audit: AuditSample | null;
+  sheets: { name: string }[];
+  sheetIndex: number;
+  onSheet: (index: number) => void;
+  done: Record<string, boolean>;
+  setDone: (value: Record<string, boolean>) => void;
+  onReplace: () => void;
+  onChange: (next: { extract: DrawingExtract; sourceText: string | null }) => void;
+}) {
+  const [fullscreen, setFullscreen] = useState(false);
+
+  return (
+    <>
+      <div className="flex min-h-0 flex-1 flex-col gap-3 rounded-xl border-2 border-border bg-card p-4">
+        <div className="flex items-center justify-between gap-2">
+          <p className="truncate text-sm font-medium">{label}</p>
+          <Button type="button" variant="ghost" size="sm" onClick={onReplace}>
+            Replace
+          </Button>
+        </div>
+        <SheetTabs sheets={sheets} sheetIndex={sheetIndex} onSheet={onSheet} />
+        <NoteForm extract={extract} sourceText={sourceText} onChange={onChange} />
+        <div className="min-h-0 flex-1 overflow-hidden rounded-lg border">
+          <DrawingPreview
+            extract={extract}
+            label={label}
+            onToggleFullscreen={() => setFullscreen(true)}
+          />
+        </div>
+      </div>
+      {fullscreen ? (
+        <FullscreenDrawing
+          extract={extract}
+          sourceText={sourceText}
+          label={label}
+          audit={audit}
+          sheets={sheets}
+          sheetIndex={sheetIndex}
+          onSheet={onSheet}
+          done={done}
+          setDone={setDone}
+          onChange={onChange}
+          onClose={() => setFullscreen(false)}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function SheetTabs({
+  sheets,
+  sheetIndex,
+  onSheet,
+}: {
+  sheets: { name: string }[];
+  sheetIndex: number;
+  onSheet: (index: number) => void;
+}) {
+  if (sheets.length < 2) {
+    return null;
+  }
+  return (
+    <div className="flex flex-wrap gap-1" role="tablist" aria-label="Sheets">
+      {sheets.map((sheet, index) => (
+        <Button
+          key={`${sheet.name}-${index}`}
+          type="button"
+          size="sm"
+          variant={index === sheetIndex ? "secondary" : "outline"}
+          role="tab"
+          aria-selected={index === sheetIndex}
+          onClick={() => onSheet(index)}
+        >
+          {sheet.name}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
+function NoteForm({
+  extract,
+  sourceText,
+  onChange,
+}: {
+  extract: DrawingExtract;
+  sourceText: string | null;
+  onChange: (next: { extract: DrawingExtract; sourceText: string | null }) => void;
+}) {
+  const noteId = useId();
+  const [draft, setDraft] = useState("");
+
+  function addNote(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const next = addVisibleText(extract, sourceText, draft);
+    onChange(next);
+    setDraft("");
+  }
+
+  return (
+    <form className="flex flex-wrap items-end gap-2" onSubmit={addNote}>
+      <label htmlFor={noteId} className="min-w-0 flex-1 text-xs text-muted-foreground">
+        Add text
+        <input
+          id={noteId}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          className="mt-1 block w-full border-b border-border bg-transparent py-1 text-sm text-foreground"
+        />
+      </label>
+      <Button type="submit" variant="outline" size="sm">
+        Show on drawing
+      </Button>
+    </form>
+  );
+}
+
+function FullscreenDrawing({
+  extract,
+  sourceText,
+  label,
+  audit,
+  sheets,
+  sheetIndex,
+  onSheet,
+  done,
+  setDone,
+  onChange,
+  onClose,
+}: {
+  extract: DrawingExtract;
+  sourceText: string | null;
+  label: string;
+  audit: AuditSample | null;
+  sheets: { name: string }[];
+  sheetIndex: number;
+  onSheet: (index: number) => void;
+  done: Record<string, boolean>;
+  setDone: (value: Record<string, boolean>) => void;
+  onChange: (next: { extract: DrawingExtract; sourceText: string | null }) => void;
+  onClose: () => void;
+}) {
+  const shellRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
+  useEffect(() => {
+    const shell = shellRef.current;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    let entered = false;
+    shell?.requestFullscreen?.().then(
+      () => {
+        entered = true;
+      },
+      () => undefined,
+    );
+
+    function onFullscreenChange() {
+      if (entered && !document.fullscreenElement) {
+        onCloseRef.current();
+      }
+    }
+
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape" && !document.fullscreenElement) {
+        onCloseRef.current();
+      }
+    }
+
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+      window.removeEventListener("keydown", onKey);
+      if (document.fullscreenElement === shell) {
+        void document.exitFullscreen?.();
+      }
+    };
+  }, []);
+
+  return (
+    <div ref={shellRef} className="fixed inset-0 z-50 flex flex-col bg-background">
+      <div className="flex shrink-0 items-center gap-3 border-b px-3 py-2">
+        <p className="max-w-xs truncate text-sm font-medium">{label}</p>
+        <SheetTabs sheets={sheets} sheetIndex={sheetIndex} onSheet={onSheet} />
+        <div className="min-w-0 flex-1">
+          <NoteForm extract={extract} sourceText={sourceText} onChange={onChange} />
+        </div>
+        <Button type="button" variant="outline" size="sm" onClick={onClose}>
+          <X />
+          Exit
+        </Button>
+      </div>
+      <div className="relative min-h-0 flex-1">
+        <DrawingPreview
+          extract={extract}
+          label={label}
+          fullscreen
+          onToggleFullscreen={onClose}
+        />
+        <ReviewDock audit={audit} done={done} setDone={setDone} />
       </div>
     </div>
   );
@@ -276,12 +584,14 @@ function InspectingState() {
 function Analysis({
   audit,
   extract,
+  sheetName,
   sourceText,
   done,
   setDone,
 }: {
   audit: AuditSample;
   extract: DrawingExtract | null;
+  sheetName: string;
   sourceText: string | null;
   done: Record<string, boolean>;
   setDone: (value: Record<string, boolean>) => void;
@@ -304,7 +614,7 @@ function Analysis({
       return;
     }
     downloadBlob(
-      `${audit.fileStem}-annotated.dxf`,
+      `${audit.fileStem}-${sheetName.replace(/\s+/g, "-").toLowerCase()}-annotated.dxf`,
       buildAnnotatedDrawing(audit, extract, sourceText ?? undefined),
       "application/dxf",
     );
@@ -342,7 +652,7 @@ function Analysis({
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader className="border-b">
-            <CardTitle>Passed</CardTitle>
+            <ReviewTitle id="passed" />
           </CardHeader>
           <CardContent>
             {audit.passed.length ? (
@@ -378,7 +688,7 @@ function Analysis({
 
         <Card>
           <CardHeader className="border-b">
-            <CardTitle>Not approved</CardTitle>
+            <ReviewTitle id="failed" />
           </CardHeader>
           <CardContent>
             {audit.failed.length ? (
@@ -417,42 +727,19 @@ function Analysis({
 
       <Card>
         <CardHeader className="border-b">
-          <CardTitle>
-            What to change
-            {audit.failed.length ? (
-              <span className="ml-2 text-sm font-normal text-muted-foreground">
-                {remaining} left
-              </span>
-            ) : null}
-          </CardTitle>
+          <ReviewTitle
+            id="changes"
+            extra={
+              audit.failed.length ? (
+                <span className="text-sm font-normal text-muted-foreground">
+                  {remaining} left
+                </span>
+              ) : null
+            }
+          />
         </CardHeader>
         <CardContent>
-          {audit.failed.length ? (
-            <ul className="divide-y">
-              {audit.failed.map((row) => (
-                <li key={row.id} className="flex items-start gap-3 py-3">
-                  <Checkbox
-                    checked={Boolean(done[row.id])}
-                    onCheckedChange={(value) =>
-                      setDone({ ...done, [row.id]: value === true })
-                    }
-                    aria-label={`Mark ${row.check} done`}
-                    className="mt-0.5"
-                  />
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium">
-                      {row.part} · {row.check}
-                    </p>
-                    <p className="text-sm text-muted-foreground">{row.adjust}</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              No drawing changes from these checks.
-            </p>
-          )}
+          <ChangeList rows={audit.failed} done={done} setDone={setDone} />
         </CardContent>
       </Card>
 

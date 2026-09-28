@@ -13,4 +13,14 @@ export const sampleDrawings: SampleDrawing[] = [
     label: "130 Hartley Road (G1 medical offices)",
     href: "/samples/hartley-test2.dxf",
   },
+  {
+    id: "sample-2018",
+    label: "Sample DWG",
+    href: "/samples/sample-2018.dwg",
+  },
+  {
+    id: "sheet-styles",
+    label: "Dashes, hatch, leader",
+    href: "/samples/sheet-styles.dxf",
+  },
 ];

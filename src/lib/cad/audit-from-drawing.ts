@@ -33,7 +33,7 @@ export function auditFromDrawing(
   const warnings: string[] = [];
   if (extract.format === "dwg" && extract.geometry.length === 0) {
     warnings.push(
-      "This drawing is binary. Plancheck reads titles and notes. Export from CAD for a fuller preview and annotated drawing.",
+      "This DWG could not be converted. Plancheck read titles and notes only. Export DXF from CAD for a fuller preview and annotated drawing.",
     );
   }
 
