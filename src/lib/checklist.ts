@@ -1,14 +1,17 @@
-import type { AuditSample } from "@/data/types";
+import type { AuditSample, SansClause } from "@/data/types";
+import { formatClause } from "@/lib/sans/clauses";
 
 export const DISCLAIMER =
   "Not a stamp. Not municipal approval. Competent person and owner signatures still required.";
 
 export function auditToReport(audit: AuditSample): string {
-  const passed = audit.passed.map(
-    (row) => `${row.part} — ${row.check} — ${row.detail} (Pass)`,
-  );
+  const passed = audit.passed.flatMap((row) => [
+    clauseLine(row.clause),
+    `${row.part} — ${row.check} — ${row.detail} (Pass)`,
+  ]);
 
   const failed = audit.failed.flatMap((row) => [
+    clauseLine(row.clause),
     `${row.part} — ${row.check}`,
     row.detail,
     `Adjust: ${row.adjust}`,
@@ -38,6 +41,10 @@ export function auditToReport(audit: AuditSample): string {
     .join("\n")
     .trimEnd()
     .concat("\n");
+}
+
+function clauseLine(clause: SansClause | undefined) {
+  return clause ? formatClause(clause) : "No SANS 10400 clause for this check.";
 }
 
 export function downloadBlob(filename: string, contents: string, mime: string) {

@@ -58,6 +58,10 @@ describe("marine-drive fixture", () => {
     assert.match(xa.adjust, /7\.05 m²/);
     assert.match(xa.adjust, /7\.71 m²/);
     assert.match(xa.adjust, /SANS 204/);
+    assert.equal(xa.clause?.book, "XA");
+    assert.equal(xa.clause?.ref, "4.4");
+    assert.equal(xa.clause?.label, "Building envelope requirements");
+    assert.equal(xa.clause?.page, 9);
   });
 
   it("fails pool enclosure, signatures, and engineering packs", () => {
@@ -83,6 +87,20 @@ describe("marine-drive fixture", () => {
     assert.ok(passed.includes("window-schedule"));
     const windows = audit.passed.find((row) => row.id === "window-schedule");
     assert.match(windows?.detail ?? "", /W1/);
+    assert.equal(windows?.clause?.ref, "4.2");
+    assert.equal(windows?.clause?.book, "N");
+    const stairs = audit.passed.find((row) => row.id === "part-m");
+    assert.equal(stairs?.clause?.book, "M");
+    assert.equal(stairs?.clause?.ref, "4.2");
+    assert.equal(stairs?.clause?.page, 6);
+    const occupancy = audit.passed.find((row) => row.id === "occupancy");
+    assert.equal(occupancy?.clause?.ref, "A20");
+    assert.equal(occupancy?.detail.includes("A20"), false);
+    const coverage = audit.passed.find((row) => row.id === "coverage");
+    assert.equal(coverage?.clause, undefined);
+    const storm = audit.passed.find((row) => row.id === "part-r");
+    assert.equal(storm?.clause?.ref, "R1");
+    assert.equal(storm?.clause?.page, 149);
   });
 
   it("shows added text on the drawing and in the dxf", () => {
@@ -149,5 +167,10 @@ describe("hartley-test2 fixture", () => {
     ]);
     const address = audit.failed.find((row) => row.id === "address");
     assert.match(address?.detail ?? "", /130 vs 132/);
+    assert.equal(address?.clause?.ref, "A6");
+    assert.equal(address?.clause?.page, 28);
+    const stairs = audit.failed.find((row) => row.id === "part-m");
+    assert.equal(stairs?.clause?.ref, "4.2");
+    assert.equal(stairs?.clause?.book, "M");
   });
 });

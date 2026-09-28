@@ -1,5 +1,6 @@
 import type { FailedCheck, PassedCheck } from "@/data/types";
 import type { DrawingExtract } from "@/lib/cad/extract";
+import { clauseForRule } from "@/lib/sans/clauses";
 import { occupancyFromText } from "@/lib/sans/occupancy";
 
 const ADDRESS =
@@ -569,6 +570,7 @@ export function evaluateRules(ctx: AuditContext) {
     if (result.status === "skip") {
       continue;
     }
+    const clause = clauseForRule(rule.id);
     if (result.status === "pass") {
       passed.push({
         id: rule.id,
@@ -576,6 +578,7 @@ export function evaluateRules(ctx: AuditContext) {
         check: rule.check,
         detail: result.detail,
         status: "pass",
+        clause,
         evidence: result.evidence,
       });
       continue;
@@ -587,6 +590,7 @@ export function evaluateRules(ctx: AuditContext) {
       detail: result.detail,
       status: "fail",
       adjust: result.adjust,
+      clause,
       evidence: result.evidence,
     });
   }

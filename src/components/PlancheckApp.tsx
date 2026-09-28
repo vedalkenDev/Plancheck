@@ -3,6 +3,7 @@
 import { FileUp, Loader2, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react";
 import { ChangeList, ReviewTitle } from "@/components/check-panels";
+import { ClauseLine } from "@/components/ClauseLine";
 import { DrawingPreview } from "@/components/DrawingPreview";
 import { ReviewDock } from "@/components/ReviewDock";
 import { SansBook } from "@/components/SansBook";
@@ -671,7 +672,8 @@ function Analysis({
                         {row.part}
                       </TableCell>
                       <TableCell className="whitespace-normal">
-                        {row.check}
+                        <div>{row.check}</div>
+                        <ClauseLine clause={row.clause} />
                       </TableCell>
                       <TableCell className="whitespace-normal text-muted-foreground">
                         {row.detail}
@@ -707,7 +709,8 @@ function Analysis({
                         {row.part}
                       </TableCell>
                       <TableCell className="whitespace-normal">
-                        {row.check}
+                        <div>{row.check}</div>
+                        <ClauseLine clause={row.clause} />
                       </TableCell>
                       <TableCell className="whitespace-normal text-muted-foreground">
                         {row.detail}

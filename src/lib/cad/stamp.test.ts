@@ -15,7 +15,6 @@ const audit: AuditSample = {
   occupancy: "H4",
   occupancyNote: "dwelling",
   verdict: "Close, not council-ready.",
-  passed: [],
   failed: [
     {
       id: "part-d",
@@ -24,6 +23,27 @@ const audit: AuditSample = {
       detail: "Missing",
       status: "fail",
       adjust: "Fence the pool at 1.2 m.",
+      clause: {
+        book: "D",
+        ref: "4.4",
+        label: "Swimming pools and swimming baths",
+        page: 5,
+      },
+    },
+  ],
+  passed: [
+    {
+      id: "part-m",
+      part: "M",
+      check: "Stairs",
+      detail: "Part M dimensions noted",
+      status: "pass",
+      clause: {
+        book: "M",
+        ref: "4.2",
+        label: "Dimensional requirements",
+        page: 6,
+      },
     },
   ],
 };
@@ -75,7 +95,11 @@ describe("stampAudit", () => {
     const fixes = stamped.geometry.flatMap((entity) =>
       entity.kind === "text" && entity.layer === "COUNCIL_FIXES" ? [entity] : [],
     );
-    assert.ok(fixes.some((entity) => entity.value.includes("SANS D")));
+    assert.ok(fixes.some((entity) => entity.value.includes("SANS 10400-D 4.4")));
+    const passes = stamped.geometry.flatMap((entity) =>
+      entity.kind === "text" && entity.layer === "COUNCIL_CHECK" ? [entity] : [],
+    );
+    assert.ok(passes.some((entity) => entity.value.includes("SANS 10400-M 4.2")));
   });
 
   it("parks the stamp in the open side of the sheet", () => {

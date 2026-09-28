@@ -3,12 +3,20 @@ export type CheckEvidence = {
   layer?: string;
 };
 
+export type SansClause = {
+  book: string;
+  ref: string;
+  label: string;
+  page: number | null;
+};
+
 export type PassedCheck = {
   id: string;
   part: string;
   check: string;
   detail: string;
   status: "pass";
+  clause?: SansClause;
   evidence?: CheckEvidence[];
 };
 
@@ -19,6 +27,7 @@ export type FailedCheck = {
   detail: string;
   status: "fail";
   adjust: string;
+  clause?: SansClause;
   evidence?: CheckEvidence[];
 };
 

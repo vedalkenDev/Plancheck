@@ -2,6 +2,7 @@ import type { AuditSample } from "@/data/types";
 import type { DrawingExtract, GeomEntity, Point } from "@/lib/cad/extract";
 import { geometryBounds } from "@/lib/cad/preview";
 import { wrapText } from "@/lib/cad/preview";
+import { clauseStamp } from "@/lib/sans/clauses";
 
 const STAMP_LAYERS = new Set(["COUNCIL_CHECK", "COUNCIL_FIXES"]);
 
@@ -13,7 +14,7 @@ export function stampAudit(extract: DrawingExtract, audit: AuditSample): Drawing
     : 1000;
   const height = textHeight(base, span);
   const column = height * 42;
-  const lines = stampLines(audit, column, height).slice(0, 16);
+  const lines = stampLines(audit, column, height);
   const placed = placeLines(base, bounds, lines, height, column);
 
   return {
@@ -27,8 +28,13 @@ function stampLines(audit: AuditSample, column: number, height: number) {
     { layer: "COUNCIL_CHECK", text: audit.verdict, color: "#1c1917" },
     ...audit.failed.map((row) => ({
       layer: "COUNCIL_FIXES",
-      text: `SANS ${row.part} ${row.check}. ${row.adjust}`,
+      text: `${clauseStamp(row.clause)} ${row.check}. ${row.adjust}`,
       color: "#b91c1c",
+    })),
+    ...audit.passed.map((row) => ({
+      layer: "COUNCIL_CHECK",
+      text: `${clauseStamp(row.clause)} ${row.check}. ${row.detail}`,
+      color: "#1c1917",
     })),
   ];
   return rows.flatMap((row) =>
@@ -61,8 +67,10 @@ function placeLines(
   column: number,
 ): GeomEntity[] {
   const leading = height * 1.45;
-  const blockH = Math.max(leading, lines.length * leading);
-  const frame = bounds ?? { minX: 0, minY: 0, maxX: column * 2, maxY: blockH * 2 };
+  const frame = bounds ?? { minX: 0, minY: 0, maxX: column * 2, maxY: lines.length * leading * 2 };
+  const sheetH = Math.max(frame.maxY - frame.minY, leading);
+  const fitted = lines.slice(0, Math.max(1, Math.floor(sheetH / leading)));
+  const blockH = Math.max(leading, fitted.length * leading);
   const spot = clearestSpot(geometry, frame, column, blockH);
   const roomW = Math.max(frame.maxX - frame.minX, column);
   const roomH = Math.max(frame.maxY - frame.minY, blockH);
@@ -82,7 +90,7 @@ function placeLines(
       ],
     },
   ];
-  lines.forEach((line, index) => {
+  fitted.forEach((line, index) => {
     entities.push({
       kind: "text",
       layer: line.layer,
