@@ -5,6 +5,7 @@ import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from "rea
 import { ChangeList, ReviewTitle } from "@/components/check-panels";
 import { DrawingPreview } from "@/components/DrawingPreview";
 import { ReviewDock } from "@/components/ReviewDock";
+import { SansBook } from "@/components/SansBook";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -303,7 +304,8 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
         </section>
 
         <section className="min-h-0 overflow-auto lg:col-span-2">
-          <div className="p-4 md:p-6">
+          <div className="space-y-6 p-4 md:p-6">
+            <SansBook />
             {reading ? (
               <InspectingState />
             ) : viewed ? (
