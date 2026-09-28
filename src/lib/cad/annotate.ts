@@ -1,14 +1,14 @@
 import type { AuditSample } from "@/data/types";
 import type { DrawingExtract, GeomEntity } from "@/lib/cad/extract";
 import { geometryBounds } from "@/lib/cad/preview";
-import { DISCLAIMER } from "@/lib/checklist";
+import { stampAudit } from "@/lib/cad/stamp";
 
 const LAYERS = [
-  { name: "COUNCIL_CHECK", color: 3 },
-  { name: "WIN_SCHED", color: 4 },
+  { name: "COUNCIL_CHECK", color: 250 },
   { name: "COUNCIL_FIXES", color: 1 },
-  { name: "WINDOW_DIMS", color: 5 },
 ] as const;
+
+const STAMP_LAYERS = new Set<string>(LAYERS.map((layer) => layer.name));
 
 export function addVisibleText(
   extract: DrawingExtract,
@@ -59,53 +59,17 @@ export function buildAnnotatedDrawing(
   extract: DrawingExtract,
   originalText?: string,
 ) {
-  const notes = annotationEntities(audit, extract);
+  const stamped = extract.geometry.some((entity) => STAMP_LAYERS.has(entity.layer ?? ""))
+    ? extract
+    : stampAudit(extract, audit);
+  const notes = stamped.geometry
+    .filter((entity) => STAMP_LAYERS.has(entity.layer ?? ""))
+    .map(entityToDxf)
+    .join("\n");
   if (originalText && looksLikeDxf(originalText)) {
     return injectEntities(originalText, notes);
   }
-  return standaloneDxf(extract, notes);
-}
-
-function annotationEntities(audit: AuditSample, extract: DrawingExtract) {
-  const bounds = geometryBounds(extract.geometry);
-  const x = bounds ? bounds.maxX + 1200 : 0;
-  let y = bounds ? bounds.maxY : 16000;
-  const height = 280;
-  const gap = 420;
-  const lines: string[] = [];
-
-  function add(layer: string, text: string) {
-    lines.push(dxfText(layer, x, y, height, text));
-    y -= gap;
-  }
-
-  add("COUNCIL_CHECK", "PLANCHECK — pre-submission audit");
-  add("COUNCIL_CHECK", DISCLAIMER);
-  add("COUNCIL_CHECK", `${audit.occupancy} · ${audit.occupancyNote}`);
-  add("COUNCIL_CHECK", audit.verdict);
-  y -= gap / 2;
-  add("COUNCIL_FIXES", "FAILED");
-  for (const row of audit.failed) {
-    add("COUNCIL_FIXES", `${row.part} ${row.check}: ${row.adjust}`);
-  }
-  y -= gap / 2;
-  add("COUNCIL_CHECK", "PASSED");
-  for (const row of audit.passed) {
-    add("COUNCIL_CHECK", `${row.part} ${row.check}: ${row.detail}`);
-  }
-
-  const windows = audit.passed.find((row) => row.id === "window-schedule");
-  if (windows) {
-    y -= gap / 2;
-    add("WIN_SCHED", `Window schedule: ${windows.detail}`);
-    add("WINDOW_DIMS", "Show overall and pane sizes on each window type elevation.");
-  } else if (audit.failed.some((row) => row.id === "window-schedule")) {
-    y -= gap / 2;
-    add("WIN_SCHED", "Window schedule missing — type elevations with pane sizes required.");
-    add("WINDOW_DIMS", "Draw overall + pane dimensions in free space on the sheet.");
-  }
-
-  return lines.join("\n");
+  return standaloneDxf(stamped, "");
 }
 
 function standaloneDxf(extract: DrawingExtract, notes: string) {
@@ -261,6 +225,7 @@ function entityToDxf(entity: GeomEntity) {
     "TEXT",
     "  8",
     entity.layer ?? "0",
+    ...dxfColor(entity.layer),
     " 10",
     entity.p.x,
     " 20",
@@ -270,4 +235,14 @@ function entityToDxf(entity: GeomEntity) {
     "  1",
     entity.value.slice(0, 250),
   ].join("\n");
+}
+
+function dxfColor(layer: string | undefined) {
+  if (layer === "COUNCIL_FIXES") {
+    return [" 62", "     1"];
+  }
+  if (layer === "COUNCIL_CHECK") {
+    return [" 62", "   250"];
+  }
+  return [];
 }

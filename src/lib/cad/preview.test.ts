@@ -1,7 +1,17 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { GeomEntity } from "./extract";
-import { geometryBounds } from "./preview";
+import { geometryBounds, wrapText } from "./preview";
+
+describe("wrapped notes", () => {
+  it("breaks a paragraph on the column and keeps a new paragraph", () => {
+    const lines = wrapText("All glazing to comply with SANS 10400 part N on this sheet.\nSecond note", 20, 2);
+    assert.ok(lines.length > 2);
+    assert.ok(lines.every((line) => line.length <= 18));
+    assert.equal(lines.at(-1), "Second note");
+    assert.equal(wrapText("Short label", undefined, 2).join("\n"), "Short label");
+  });
+});
 
 describe("drawing frame", () => {
   it("fits the plan and ignores a stray point far from the sheet", () => {

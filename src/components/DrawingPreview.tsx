@@ -13,7 +13,7 @@ import {
   zoomCamera,
   type Camera,
 } from "@/lib/cad/camera";
-import { arcPath, geometryBounds } from "@/lib/cad/preview";
+import { arcPath, geometryBounds, wrapText } from "@/lib/cad/preview";
 
 type DrawingPreviewProps = {
   extract: DrawingExtract;
@@ -152,15 +152,6 @@ export function DrawingPreview({
       point.y <= bounds.maxY + span;
     return (
       <g>
-        <rect
-          x={bounds.minX}
-          y={bounds.minY}
-          width={Math.max(bounds.maxX - bounds.minX, 1)}
-          height={Math.max(bounds.maxY - bounds.minY, 1)}
-          className="fill-card stroke-border"
-          strokeWidth={1}
-          vectorEffect="non-scaling-stroke"
-        />
         {extract.geometry.map((entity, index) =>
           renderEntity(entity, index, { sy, span, onSheet }),
         )}
@@ -233,12 +224,12 @@ export function DrawingPreview({
   return (
     <div
       ref={hostRef}
-      className="relative h-full min-h-64 w-full overflow-hidden bg-muted/40"
+      className="relative h-full min-h-64 w-full overflow-hidden bg-white"
     >
       <svg
         ref={svgRef}
         viewBox={cameraViewBox(camera)}
-        className={`absolute inset-0 h-full w-full touch-none text-foreground select-none ${dragging ? "cursor-grabbing" : "cursor-grab"}`}
+        className={`absolute inset-0 h-full w-full touch-none text-neutral-950 select-none ${dragging ? "cursor-grabbing" : "cursor-grab"}`}
         role="application"
         aria-label={`${label}. Drag to move the drawing. Scroll to zoom.`}
         onPointerDown={onPointerDown}
@@ -285,11 +276,15 @@ function renderEntity(
   },
 ) {
   const { sy, span, onSheet } = ctx;
+  const ink = paperInk(entity.color);
   const stroke = {
-    stroke: "currentColor",
-    strokeWidth: 1.5,
+    stroke: ink,
+    strokeWidth: entity.weight ?? 1,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    strokeDasharray: dashArray(entity.dash, span),
     vectorEffect: "non-scaling-stroke" as const,
-    fill: "none",
+    fill: "none" as const,
   };
   if (entity.kind === "line") {
     const length = Math.hypot(entity.b.x - entity.a.x, entity.b.y - entity.a.y);
@@ -312,7 +307,40 @@ function renderEntity(
     if (!d) {
       return null;
     }
-    return <path key={`p-${index}`} d={d} {...stroke} />;
+    const pattern = entity.pattern;
+    return (
+      <g key={`p-${index}`}>
+        {pattern !== undefined ? (
+          <defs>
+            <pattern
+              id={`hatch-${index}`}
+              patternUnits="userSpaceOnUse"
+              width={span / 28}
+              height={span / 28}
+              patternTransform={`rotate(${-pattern})`}
+            >
+              <line
+                x1={0}
+                y1={0}
+                x2={0}
+                y2={span / 28}
+                stroke={ink}
+                strokeWidth={1}
+                vectorEffect="non-scaling-stroke"
+              />
+            </pattern>
+          </defs>
+        ) : null}
+        <path
+          d={d}
+          {...stroke}
+          fill={
+            entity.fill ? ink : pattern !== undefined ? `url(#hatch-${index})` : "none"
+          }
+          fillOpacity={entity.fill ? 0.22 : undefined}
+        />
+      </g>
+    );
   }
   if ((entity.kind === "circle" || entity.kind === "arc") && (entity.r > span * 2 || !onSheet(entity.c))) {
     return null;
@@ -334,17 +362,61 @@ function renderEntity(
   if (entity.kind !== "text" || !onSheet(entity.p)) {
     return null;
   }
+  const x = entity.p.x;
+  const y = sy(entity.p.y);
+  const fontSize = entity.height;
+  const lines = wrapText(entity.value, entity.width, fontSize);
+  const leading = fontSize * 1.6;
+  const shift =
+    entity.valign === "top"
+      ? 0
+      : entity.valign === "middle"
+        ? -((lines.length - 1) * leading) / 2
+        : -((lines.length - 1) * leading);
   return (
     <text
       key={`t-${index}`}
-      x={entity.p.x}
-      y={sy(entity.p.y)}
-      fontSize={Math.max(entity.height, span / 55)}
-      fill={entity.layer === "NOTE" ? "#f87171" : "currentColor"}
+      x={x}
+      y={y}
+      fontSize={fontSize}
+      fontFamily="ui-sans-serif, system-ui, sans-serif"
+      textAnchor={entity.align === "center" ? "middle" : entity.align === "right" ? "end" : "start"}
+      dominantBaseline={
+        entity.valign === "middle" ? "middle" : entity.valign === "top" ? "hanging" : "auto"
+      }
+      transform={entity.rotation ? `rotate(${-entity.rotation} ${x} ${y})` : undefined}
+      fill={entity.layer === "NOTE" ? "#dc2626" : ink}
     >
-      {entity.value.slice(0, 120)}
+      {lines.map((line, lineIndex) => (
+        <tspan key={lineIndex} x={x} dy={lineIndex === 0 ? shift : leading}>
+          {line}
+        </tspan>
+      ))}
     </text>
   );
+}
+
+function paperInk(color: string | undefined) {
+  if (!color || color.toLowerCase() === "#ffffff") {
+    return "#1c1917";
+  }
+  if (color.toLowerCase() === "#ffff00") {
+    return "#a16207";
+  }
+  return color;
+}
+
+function dashArray(dash: number[] | undefined, span: number) {
+  if (!dash?.length) {
+    return undefined;
+  }
+  const length = dash.reduce((sum, part) => sum + Math.abs(part), 0);
+  const scale = length > 0 && (length < span / 500 || length > span / 8) ? span / 36 / length : 1;
+  const parts = dash.map((part) => Math.max(Math.abs(part) * scale, span / 900));
+  if (dash[0] < 0) {
+    parts.unshift(0);
+  }
+  return parts.join(" ");
 }
 
 function sheetPath(

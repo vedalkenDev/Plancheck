@@ -4,6 +4,8 @@ import { describe, it } from "node:test";
 import { addVisibleText, buildAnnotatedDrawing } from "./annotate";
 import { auditFromDrawing } from "./audit-from-drawing";
 import { extractDrawing } from "./extract";
+import { geometryBounds } from "./preview";
+import { stampAudit } from "./stamp";
 import { occupancyFromText } from "../sans/occupancy";
 
 function load(path: string, name: string) {
@@ -99,10 +101,27 @@ describe("marine-drive fixture", () => {
     const dxf = buildAnnotatedDrawing(audit, extract, text);
     assert.match(dxf, /COUNCIL_FIXES/);
     assert.match(dxf, /COUNCIL_CHECK/);
-    assert.match(dxf, /WIN_SCHED/);
-    assert.match(dxf, /WINDOW_DIMS/);
+    assert.match(dxf, new RegExp(audit.verdict.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.doesNotMatch(dxf, /WINDOW_DIMS/);
+    assert.doesNotMatch(dxf, /pre-submission audit/);
     assert.match(dxf, /ENTITIES/);
     assert.ok(!dxf.startsWith("Plancheck annotated drawing"));
+    const bounds = geometryBounds(extract.geometry);
+    assert.ok(bounds);
+    const stamped = stampAudit(extract, audit);
+    const notes = stamped.geometry.flatMap((entity) =>
+      entity.kind === "text" &&
+      (entity.layer === "COUNCIL_CHECK" || entity.layer === "COUNCIL_FIXES")
+        ? [entity]
+        : [],
+    );
+    assert.ok(notes.length > 1);
+    for (const note of notes) {
+      assert.ok(note.p.x >= bounds.minX && note.p.x <= bounds.maxX);
+      assert.ok(note.p.y >= bounds.minY && note.p.y <= bounds.maxY);
+      assert.ok(note.height < 280);
+      assert.ok(dxf.includes(String(note.p.y)));
+    }
   });
 });
 

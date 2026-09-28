@@ -18,4 +18,9 @@ export const sampleDrawings: SampleDrawing[] = [
     label: "Sample DWG",
     href: "/samples/sample-2018.dwg",
   },
+  {
+    id: "sheet-styles",
+    label: "Dashes, hatch, leader",
+    href: "/samples/sheet-styles.dxf",
+  },
 ];
