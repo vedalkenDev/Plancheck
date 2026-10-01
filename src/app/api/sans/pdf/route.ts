@@ -1,9 +1,23 @@
 import { NextResponse } from "next/server";
+import { isAllowedEmail } from "@/lib/auth/allowlist";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { hasSupabaseConfig } from "@/lib/supabase/env";
+import { createServerSupabase } from "@/lib/supabase/server";
 
 const PART = /^[A-Za-z0-9]{1,8}$/;
 
 export async function GET(request: Request) {
+  if (!hasSupabaseConfig()) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const supabase = await createServerSupabase();
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const email =
+    typeof claimsData?.claims?.email === "string" ? claimsData.claims.email : null;
+  if (!isAllowedEmail(email)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const url = new URL(request.url);
   const part = url.searchParams.get("part")?.trim() ?? "";
   const pageRaw = url.searchParams.get("page");

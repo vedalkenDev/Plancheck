@@ -12,18 +12,38 @@ Product, engine pipeline, SANS drawing rules, and sample ground truth: [`docs/BL
 
 ```bash
 npm install
+cp .env.example .env.local
 npm run dev
 ```
 
-Open [http://127.0.0.1:43173/plancheck](http://127.0.0.1:43173/plancheck). `/` redirects there.
+Fill `.env.local` with the PlanCheck Supabase URL, publishable key, and the one allowed Google email (`PLANCHECK_ALLOWED_EMAIL`).
+
+Open [http://127.0.0.1:43173/login](http://127.0.0.1:43173/login). Unauthenticated visits to `/` and `/plancheck` redirect there.
 
 ```bash
 npm test
 npm run build
 ```
 
+## Sign-in (one Google account)
+
+Plancheck currently allows a single Google user. After Google returns, the callback keeps the session only if the email matches `PLANCHECK_ALLOWED_EMAIL`. Any other account is signed out (and deleted from Auth when the service role key is present).
+
+Google OAuth still needs a one-time provider setup:
+
+1. In [Google Auth Platform](https://console.cloud.google.com/auth/clients), create a **Web application** OAuth client.
+2. Authorized JavaScript origins: `http://127.0.0.1:43173` and the production origin.
+3. Authorized redirect URI: `https://feusartgnihrpzxpyrrm.supabase.co/auth/v1/callback`.
+4. In the [PlanCheck Google provider](https://supabase.com/dashboard/project/feusartgnihrpzxpyrrm/auth/providers), paste the Client ID and Client Secret and enable Google.
+5. Add these Redirect URLs under [URL configuration](https://supabase.com/dashboard/project/feusartgnihrpzxpyrrm/auth/url-configuration):
+   - `http://127.0.0.1:43173/auth/callback`
+   - the production `/auth/callback` URL
+
+Until Google is enabled in Supabase, the login button returns `Google sign-in didn't start`.
+
 ## Flow
 
-1. Choose a drawing file (.dwg or .dxf), or run a sample.
-2. Read the pass/fail tables. Failed items include what to adjust.
-3. Download a `.txt` checklist and an annotated drawing. Real DWG-out needs a server-side CAD worker (ODA) — see the handoff.
+1. Sign in with the allowed Google account.
+2. Choose a drawing file (.dwg or .dxf), or run a sample.
+3. Read the pass/fail tables. Failed items include what to adjust.
+4. Download a `.txt` checklist and an annotated drawing. Real DWG-out needs a server-side CAD worker (ODA) — see the handoff.

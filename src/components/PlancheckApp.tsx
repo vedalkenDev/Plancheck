@@ -29,6 +29,7 @@ import { DISCLAIMER, auditToReport, downloadBlob } from "@/lib/checklist";
 
 type PlancheckAppProps = {
   samples: SampleDrawing[];
+  userEmail: string;
 };
 
 const DRAWING_NAME = /\.(dwg|dxf)$/i;
@@ -59,7 +60,7 @@ async function readDrawing(filename: string, bytes: ArrayBuffer) {
   };
 }
 
-export function PlancheckApp({ samples }: PlancheckAppProps) {
+export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const [extract, setExtract] = useState<DrawingExtract | null>(null);
@@ -190,6 +191,14 @@ export function PlancheckApp({ samples }: PlancheckAppProps) {
           Plancheck
         </h1>
         <div className="flex items-center gap-3">
+          <span className="hidden max-w-56 truncate text-sm text-muted-foreground sm:inline">
+            {userEmail}
+          </span>
+          <form action="/auth/logout" method="post">
+            <Button type="submit" variant="outline" size="sm">
+              Sign out
+            </Button>
+          </form>
           <ThemeToggle />
           <a
             href="https://vedalken.dev"
