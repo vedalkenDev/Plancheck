@@ -42,6 +42,9 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (!isPublicPath(path) && !allowed) {
+    if (path.startsWith("/api/")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     return withAuthCookies(
       supabaseResponse,
       NextResponse.redirect(new URL("/login", request.url)),

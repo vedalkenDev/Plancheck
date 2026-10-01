@@ -45,10 +45,13 @@ describe("auth paths", () => {
     assert.equal(safeNextPath("plancheck"), "/plancheck");
   });
 
-  it("uses the request origin in development", () => {
+  it("uses the Host header in development", () => {
     const origin = publicOrigin(
-      new Request("http://127.0.0.1:43173/auth/google", {
-        headers: { "x-forwarded-host": "evil.test" },
+      new Request("http://localhost:43173/auth/google", {
+        headers: {
+          host: "127.0.0.1:43173",
+          "x-forwarded-host": "evil.test",
+        },
       }),
       "development",
     );

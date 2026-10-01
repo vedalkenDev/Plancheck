@@ -12,6 +12,9 @@ export async function POST(request: Request) {
   const pending: { name: string; value: string; options: CookieOptions }[] = [];
   const cacheHeaders: Record<string, string> = {};
   const { url, key } = requireSupabaseConfig();
+  if (!(await googleProviderEnabled(url, key))) {
+    return NextResponse.redirect(new URL("/login?error=oauth", origin), 303);
+  }
   const supabase = createServerClient(url, key, {
     cookies: {
       getAll() {
@@ -64,4 +67,16 @@ function parseCookies(header: string | null) {
     }
     return [{ name, value }];
   });
+}
+
+async function googleProviderEnabled(url: string, key: string) {
+  const response = await fetch(`${url}/auth/v1/settings`, {
+    headers: { apikey: key, Authorization: `Bearer ${key}` },
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    return false;
+  }
+  const body = (await response.json()) as { external?: { google?: boolean } };
+  return body.external?.google === true;
 }

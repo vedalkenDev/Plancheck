@@ -16,7 +16,8 @@ export function safeNextPath(next: string | null | undefined, fallback = "/planc
 export function publicOrigin(request: Request, nodeEnv = process.env.NODE_ENV) {
   const url = new URL(request.url);
   if (nodeEnv === "development") {
-    return url.origin;
+    const host = request.headers.get("host") ?? url.host;
+    return `${url.protocol}//${host}`;
   }
   const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
   if (!host) {
