@@ -1,6 +1,7 @@
 export function isPublicPath(pathname: string) {
   return (
     pathname === "/login" ||
+    pathname === "/waitlist" ||
     pathname.startsWith("/auth/") ||
     pathname.startsWith("/wasm/")
   );

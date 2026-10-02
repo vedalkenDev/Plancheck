@@ -31,13 +31,21 @@ export async function updateSession(request: NextRequest) {
 
   const { data } = await supabase.auth.getClaims();
   const email = typeof data?.claims?.email === "string" ? data.claims.email : null;
+  const signedIn = Boolean(email);
   const allowed = isAllowedEmail(email);
   const path = request.nextUrl.pathname;
 
-  if (allowed && path === "/login") {
+  if (allowed && (path === "/login" || path === "/waitlist")) {
     return withAuthCookies(
       supabaseResponse,
       NextResponse.redirect(new URL("/plancheck", request.url)),
+    );
+  }
+
+  if (signedIn && !allowed && path === "/login") {
+    return withAuthCookies(
+      supabaseResponse,
+      NextResponse.redirect(new URL("/waitlist", request.url)),
     );
   }
 
@@ -45,9 +53,10 @@ export async function updateSession(request: NextRequest) {
     if (path.startsWith("/api/")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    const next = signedIn ? "/waitlist" : "/login";
     return withAuthCookies(
       supabaseResponse,
-      NextResponse.redirect(new URL("/login", request.url)),
+      NextResponse.redirect(new URL(next, request.url)),
     );
   }
 

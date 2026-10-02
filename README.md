@@ -16,7 +16,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Fill `.env.local` with the PlanCheck Supabase URL, publishable key, and the one allowed Google email (`PLANCHECK_ALLOWED_EMAIL`).
+Fill `.env.local` with the PlanCheck Supabase URL, publishable key, and the allowed Google emails (`PLANCHECK_ALLOWED_EMAILS`).
 
 Open [http://127.0.0.1:43173/login](http://127.0.0.1:43173/login). Unauthenticated visits to `/` and `/plancheck` redirect there.
 
@@ -25,9 +25,9 @@ npm test
 npm run build
 ```
 
-## Sign-in (one Google account)
+## Sign-in (two Google accounts)
 
-Plancheck currently allows a single Google user. After Google returns, the callback keeps the session only if the email matches `PLANCHECK_ALLOWED_EMAIL`. Any other account is signed out (and deleted from Auth when the service role key is present).
+Plancheck currently allows two Google users, set in `PLANCHECK_ALLOWED_EMAILS`. After Google returns, those accounts open the product. Any other account lands on `/waitlist`, where we collect name, email, and position into the `waitlist` table.
 
 Google OAuth still needs a one-time provider setup:
 
@@ -43,7 +43,7 @@ Until Google is enabled in Supabase, the login button returns `Google sign-in di
 
 ## Flow
 
-1. Sign in with the allowed Google account.
+1. Sign in with an allowed Google account, or leave a name on the list.
 2. Choose a drawing file (.dwg or .dxf), or run a sample.
 3. Read the pass/fail tables. Failed items include what to adjust.
 4. Download a `.txt` checklist and an annotated drawing. Real DWG-out needs a server-side CAD worker (ODA) — see the handoff.

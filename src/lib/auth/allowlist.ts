@@ -1,11 +1,18 @@
-export function allowedEmail() {
-  return process.env.PLANCHECK_ALLOWED_EMAIL?.trim().toLowerCase() ?? "";
+export function allowedEmails() {
+  const listed = [
+    ...(process.env.PLANCHECK_ALLOWED_EMAILS ?? "").split(","),
+    ...(process.env.PLANCHECK_ALLOWED_EMAIL ?? "").split(","),
+  ];
+  return [...new Set(listed.map((value) => value.trim().toLowerCase()).filter(Boolean))];
 }
 
 export function isAllowedEmail(email: string | null | undefined): email is string {
-  const allowed = allowedEmail();
-  if (!allowed || !email) {
+  if (!email) {
     return false;
   }
-  return email.trim().toLowerCase() === allowed;
+  const allowed = allowedEmails();
+  if (allowed.length === 0) {
+    return false;
+  }
+  return allowed.includes(email.trim().toLowerCase());
 }

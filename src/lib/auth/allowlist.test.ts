@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
-import { allowedEmail, isAllowedEmail } from "./allowlist";
+import { allowedEmails, isAllowedEmail } from "./allowlist";
 import { isPublicPath, publicOrigin, safeNextPath } from "./paths";
+import { parseWaitlistFields } from "./waitlist";
 
 const originalAllowed = process.env.PLANCHECK_ALLOWED_EMAIL;
+const originalAllowedList = process.env.PLANCHECK_ALLOWED_EMAILS;
 
 afterEach(() => {
   if (originalAllowed === undefined) {
@@ -11,27 +13,57 @@ afterEach(() => {
   } else {
     process.env.PLANCHECK_ALLOWED_EMAIL = originalAllowed;
   }
+  if (originalAllowedList === undefined) {
+    delete process.env.PLANCHECK_ALLOWED_EMAILS;
+  } else {
+    process.env.PLANCHECK_ALLOWED_EMAILS = originalAllowedList;
+  }
 });
 
 describe("isAllowedEmail", () => {
   it("denies everyone when the allowlist is empty", () => {
     delete process.env.PLANCHECK_ALLOWED_EMAIL;
-    assert.equal(allowedEmail(), "");
+    delete process.env.PLANCHECK_ALLOWED_EMAILS;
+    assert.deepEqual(allowedEmails(), []);
     assert.equal(isAllowedEmail("vedalken.dev@gmail.com"), false);
   });
 
-  it("accepts only the configured Google account, ignoring case", () => {
-    process.env.PLANCHECK_ALLOWED_EMAIL = " vedalken.dev@gmail.com ";
+  it("accepts the two configured Google accounts, ignoring case", () => {
+    delete process.env.PLANCHECK_ALLOWED_EMAIL;
+    process.env.PLANCHECK_ALLOWED_EMAILS =
+      " vedalken.dev@gmail.com, uwaism0502@gmail.com ";
     assert.equal(isAllowedEmail("Vedalken.dev@gmail.com"), true);
+    assert.equal(isAllowedEmail("uwaism0502@gmail.com"), true);
     assert.equal(isAllowedEmail("other@gmail.com"), false);
     assert.equal(isAllowedEmail(null), false);
-    assert.equal(isAllowedEmail(""), false);
+  });
+});
+
+describe("parseWaitlistFields", () => {
+  it("keeps a trimmed name and position", () => {
+    const parsed = parseWaitlistFields({
+      name: "  Luqmaan Sayed  ",
+      position: " Principal ",
+    });
+    assert.equal(parsed.ok, true);
+    if (parsed.ok) {
+      assert.deepEqual(parsed.value, {
+        name: "Luqmaan Sayed",
+        position: "Principal",
+      });
+    }
+  });
+
+  it("rejects a blank name or position", () => {
+    assert.equal(parseWaitlistFields({ name: "A", position: "Principal" }).ok, false);
+    assert.equal(parseWaitlistFields({ name: "Luqmaan", position: "" }).ok, false);
   });
 });
 
 describe("auth paths", () => {
-  it("keeps login, OAuth, and wasm public", () => {
+  it("keeps login, waitlist, OAuth, and wasm public", () => {
     assert.equal(isPublicPath("/login"), true);
+    assert.equal(isPublicPath("/waitlist"), true);
     assert.equal(isPublicPath("/auth/callback"), true);
     assert.equal(isPublicPath("/wasm/libredwg/libredwg-web.js"), true);
     assert.equal(isPublicPath("/plancheck"), false);
