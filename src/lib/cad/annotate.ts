@@ -220,6 +220,7 @@ function entityToDxf(entity: GeomEntity) {
       entity.end,
     ].join("\n");
   }
+  const top = entity.kind === "text" && entity.valign === "top";
   return [
     "  0",
     "TEXT",
@@ -234,6 +235,9 @@ function entityToDxf(entity: GeomEntity) {
     entity.height || 200,
     "  1",
     entity.value.slice(0, 250),
+    ...(top
+      ? [" 11", entity.p.x, " 21", entity.p.y, " 72", "     0", " 73", "     3"]
+      : []),
   ].join("\n");
 }
 

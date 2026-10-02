@@ -1,5 +1,6 @@
 import type { FailedCheck, PassedCheck } from "@/data/types";
 import type { DrawingExtract } from "@/lib/cad/extract";
+import { clauseForRule } from "@/lib/sans/clauses";
 import { occupancyFromText } from "@/lib/sans/occupancy";
 
 const ADDRESS =
@@ -205,13 +206,14 @@ export const SANS_RULES: Rule[] = [
     part: "M",
     check: "Stairs",
     run: (ctx) => {
-      const hasStair = /stair/i.test(ctx.blob);
-      const hasDims = /\b\d+(\.\d+)?\s*(mm|m)\b/i.test(ctx.blob) && hasStair;
-      if (hasStair && hasDims) {
+      const lines = ctx.blob.split("\n");
+      const hasStair = lines.some((line) => /stair/i.test(line));
+      const stated = lines.some((line) => statedStair(line));
+      if (stated) {
         return {
           status: "pass",
           detail: "Part M dimensions noted",
-          evidence: quotes(ctx, /stair/i),
+          evidence: quotes(ctx, /riser|going|tread/i),
         };
       }
       return {
@@ -418,6 +420,16 @@ export const SANS_RULES: Rule[] = [
   },
 ];
 
+function statedStair(line: string) {
+  if (!/riser|going|tread/i.test(line)) {
+    return false;
+  }
+  if (!/\d+(?:[.,]\d+)?\s*mm/i.test(line)) {
+    return false;
+  }
+  return !/min|max|not less|not more|comply/i.test(line);
+}
+
 function xaFenestration(ctx: AuditContext): RuleResult {
   const storeys = parseStoreyFenestration(ctx.blob);
   const mentionsXa = /xa/i.test(ctx.blob);
@@ -569,6 +581,7 @@ export function evaluateRules(ctx: AuditContext) {
     if (result.status === "skip") {
       continue;
     }
+    const clause = clauseForRule(rule.id);
     if (result.status === "pass") {
       passed.push({
         id: rule.id,
@@ -576,6 +589,7 @@ export function evaluateRules(ctx: AuditContext) {
         check: rule.check,
         detail: result.detail,
         status: "pass",
+        clause,
         evidence: result.evidence,
       });
       continue;
@@ -587,6 +601,7 @@ export function evaluateRules(ctx: AuditContext) {
       detail: result.detail,
       status: "fail",
       adjust: result.adjust,
+      clause,
       evidence: result.evidence,
     });
   }

@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
+import { openSansBook } from "@/lib/sans/open-book";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 
 type HeadingHit = {
@@ -55,17 +56,10 @@ export function SansBook() {
 
   async function openBook(hit: HeadingHit) {
     setStatus("");
-    const params = new URLSearchParams({ part: hit.part_letter });
-    if (hit.page) {
-      params.set("page", String(hit.page));
+    const message = await openSansBook(hit.part_letter, hit.page);
+    if (message) {
+      setStatus(message);
     }
-    const response = await fetch(`/api/sans/pdf?${params}`);
-    const body = (await response.json()) as { url?: string; error?: string };
-    if (!response.ok || !body.url) {
-      setStatus(body.error ?? "Could not open the PDF.");
-      return;
-    }
-    window.open(body.url, "_blank", "noopener,noreferrer");
   }
 
   return (

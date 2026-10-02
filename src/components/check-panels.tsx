@@ -1,5 +1,6 @@
 import { CircleCheck, CircleX, ListChecks, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
+import { ClauseLine } from "@/components/ClauseLine";
 import { CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { FailedCheck, PassedCheck } from "@/data/types";
@@ -21,7 +22,7 @@ export const REVIEW_TABS: {
   },
   {
     id: "failed",
-    label: "Not approved",
+    label: "Not council-ready",
     icon: CircleX,
     iconClass: "text-red-400",
   },
@@ -67,6 +68,7 @@ export function PassedList({ rows }: { rows: PassedCheck[] }) {
             {" · "}
             {row.check}
           </p>
+          <ClauseLine clause={row.clause} />
           <p className="text-sm text-muted-foreground">{row.detail}</p>
         </li>
       ))}
@@ -91,6 +93,7 @@ export function FailedList({ rows }: { rows: FailedCheck[] }) {
             {" · "}
             {row.check}
           </p>
+          <ClauseLine clause={row.clause} />
           <p className="text-sm text-muted-foreground">{row.detail}</p>
         </li>
       ))}
@@ -126,6 +129,7 @@ export function ChangeList({
             <p className="text-sm font-medium">
               {row.part} · {row.check}
             </p>
+            <ClauseLine clause={row.clause} />
             <p className="text-sm text-muted-foreground">{row.adjust}</p>
           </div>
         </li>

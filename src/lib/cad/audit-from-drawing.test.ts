@@ -8,6 +8,17 @@ import { geometryBounds } from "./preview";
 import { stampAudit } from "./stamp";
 import { occupancyFromText } from "../sans/occupancy";
 
+function noteDrawing(lines: string[]) {
+  return {
+    format: "dxf" as const,
+    texts: lines.map((value) => ({ kind: "text" as const, value })),
+    strings: lines,
+    entityCounts: {},
+    geometry: [],
+    sheets: [],
+  };
+}
+
 function load(path: string, name: string) {
   const bytes = readFileSync(path);
   const extract = extractDrawing(
@@ -24,6 +35,29 @@ function load(path: string, name: string) {
 describe("occupancy from drawing", () => {
   it("does not treat regulation A20 as an occupancy class", () => {
     assert.equal(occupancyFromText("Form 1 Regulation A20").code, "—");
+  });
+
+  it("passes stairs only when a riser, going, or tread is stated", () => {
+    const stated = auditFromDrawing("stairs.dxf", noteDrawing([
+      "Stairs 170mm riser 250mm going Part M",
+    ]));
+    assert.ok(stated.passed.some((row) => row.id === "part-m"));
+
+    const obligation = auditFromDrawing("min-tread.dxf", noteDrawing([
+      "Min tread = 250mm to comply",
+    ]));
+    assert.equal(
+      obligation.passed.some((row) => row.id === "part-m"),
+      false,
+    );
+
+    const variance = auditFromDrawing("variance.dxf", noteDrawing([
+      "6mm variance over the full height of the staircase",
+    ]));
+    assert.equal(
+      variance.failed.find((row) => row.id === "part-m")?.detail,
+      "Stair dims missing",
+    );
   });
 
   it("reads H4 dwelling and G1 medical offices from labels", () => {
@@ -58,6 +92,10 @@ describe("marine-drive fixture", () => {
     assert.match(xa.adjust, /7\.05 m²/);
     assert.match(xa.adjust, /7\.71 m²/);
     assert.match(xa.adjust, /SANS 204/);
+    assert.equal(xa.clause?.book, "XA");
+    assert.equal(xa.clause?.ref, "4.4");
+    assert.equal(xa.clause?.label, "Building envelope requirements");
+    assert.equal(xa.clause?.page, 9);
   });
 
   it("fails pool enclosure, signatures, and engineering packs", () => {
@@ -83,6 +121,20 @@ describe("marine-drive fixture", () => {
     assert.ok(passed.includes("window-schedule"));
     const windows = audit.passed.find((row) => row.id === "window-schedule");
     assert.match(windows?.detail ?? "", /W1/);
+    assert.equal(windows?.clause?.ref, "4.2");
+    assert.equal(windows?.clause?.book, "N");
+    const stairs = audit.passed.find((row) => row.id === "part-m");
+    assert.equal(stairs?.clause?.book, "M");
+    assert.equal(stairs?.clause?.ref, "4.2");
+    assert.equal(stairs?.clause?.page, 6);
+    const occupancy = audit.passed.find((row) => row.id === "occupancy");
+    assert.equal(occupancy?.clause?.ref, "A20");
+    assert.equal(occupancy?.detail.includes("A20"), false);
+    const coverage = audit.passed.find((row) => row.id === "coverage");
+    assert.equal(coverage?.clause, undefined);
+    const storm = audit.passed.find((row) => row.id === "part-r");
+    assert.equal(storm?.clause?.ref, "R1");
+    assert.equal(storm?.clause?.page, 149);
   });
 
   it("shows added text on the drawing and in the dxf", () => {
@@ -116,6 +168,26 @@ describe("marine-drive fixture", () => {
         : [],
     );
     assert.ok(notes.length > 1);
+    assert.ok(notes.some((note) => note.value.includes("SANS 10400-XA 4.4")));
+    assert.ok(notes.some((note) => note.value.includes("SANS 10400-M 4.2")));
+    assert.ok(notes.some((note) => note.value.includes("7.05")));
+    const frame = stamped.geometry.find(
+      (entity) => entity.kind === "polyline" && entity.layer === "COUNCIL_CHECK",
+    );
+    assert.ok(frame && frame.kind === "polyline");
+    for (const point of frame.points) {
+      assert.ok(point.x >= bounds.minX && point.x <= bounds.maxX);
+      assert.ok(point.y >= bounds.minY && point.y <= bounds.maxY);
+    }
+    const frameW =
+      Math.max(...frame.points.map((point) => point.x)) -
+      Math.min(...frame.points.map((point) => point.x));
+    const frameH =
+      Math.max(...frame.points.map((point) => point.y)) -
+      Math.min(...frame.points.map((point) => point.y));
+    assert.ok(frameH <= (bounds.maxY - bounds.minY) * 0.45 + 1);
+    assert.ok(frameW <= bounds.maxX - bounds.minX);
+    assert.match(dxf, / 73\n {5}3/);
     for (const note of notes) {
       assert.ok(note.p.x >= bounds.minX && note.p.x <= bounds.maxX);
       assert.ok(note.p.y >= bounds.minY && note.p.y <= bounds.maxY);
@@ -149,5 +221,10 @@ describe("hartley-test2 fixture", () => {
     ]);
     const address = audit.failed.find((row) => row.id === "address");
     assert.match(address?.detail ?? "", /130 vs 132/);
+    assert.equal(address?.clause?.ref, "A6");
+    assert.equal(address?.clause?.page, 28);
+    const stairs = audit.failed.find((row) => row.id === "part-m");
+    assert.equal(stairs?.clause?.ref, "4.2");
+    assert.equal(stairs?.clause?.book, "M");
   });
 });
