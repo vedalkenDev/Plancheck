@@ -10,11 +10,10 @@ import { useFormStatus } from "react-dom";
 const initial: JoinWaitlistState = { error: null };
 
 type WaitlistFormProps = {
-  email: string;
-  name: string;
+  email?: string;
 };
 
-export function WaitlistForm({ email, name }: WaitlistFormProps) {
+export function WaitlistForm({ email = "" }: WaitlistFormProps) {
   const [state, action] = useActionState(joinWaitlist, initial);
 
   return (
@@ -23,15 +22,15 @@ export function WaitlistForm({ email, name }: WaitlistFormProps) {
         id="waitlist-name"
         name="name"
         label="Name"
-        defaultValue={name}
         autoComplete="name"
       />
       <Field
         id="waitlist-email"
+        name="email"
         label="Email"
         type="email"
         defaultValue={email}
-        readOnly
+        autoComplete="email"
       />
       <Field
         id="waitlist-position"
@@ -57,16 +56,14 @@ function Field({
   type = "text",
   defaultValue,
   placeholder,
-  readOnly,
   autoComplete,
 }: {
   id: string;
-  name?: string;
+  name: string;
   label: string;
   type?: "text" | "email";
   defaultValue?: string;
   placeholder?: string;
-  readOnly?: boolean;
   autoComplete?: string;
 }) {
   return (
@@ -78,10 +75,8 @@ function Field({
         type={type}
         defaultValue={defaultValue}
         placeholder={placeholder}
-        readOnly={readOnly}
         autoComplete={autoComplete}
-        required={!readOnly}
-        className={readOnly ? "text-muted-foreground" : undefined}
+        required
       />
     </div>
   );

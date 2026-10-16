@@ -1,9 +1,11 @@
 "use server";
 
 import { isAllowedEmail } from "@/lib/auth/allowlist";
-import { getAuthUser } from "@/lib/auth/session";
+import { setGateCookie } from "@/lib/auth/gate-cookie";
 import { parseWaitlistFields } from "@/lib/auth/waitlist";
-import { createServerSupabase } from "@/lib/supabase/server";
+import { supabaseAdmin } from "@/lib/supabase/admin";
+import { hasSupabaseConfig, requireSupabaseConfig } from "@/lib/supabase/env";
+import { createClient } from "@supabase/supabase-js";
 import { redirect } from "next/navigation";
 
 export type JoinWaitlistState = {
@@ -14,15 +16,8 @@ export async function joinWaitlist(
   _previous: JoinWaitlistState,
   formData: FormData,
 ): Promise<JoinWaitlistState> {
-  const user = await getAuthUser();
-  if (!user) {
-    redirect("/login");
-  }
-  if (isAllowedEmail(user.email)) {
-    redirect("/plancheck");
-  }
-
   const parsed = parseWaitlistFields({
+    email: formData.get("email"),
     name: formData.get("name"),
     position: formData.get("position"),
   });
@@ -30,10 +25,18 @@ export async function joinWaitlist(
     return { error: parsed.error };
   }
 
-  const supabase = await createServerSupabase();
+  if (isAllowedEmail(parsed.value.email)) {
+    await setGateCookie(parsed.value.email);
+    redirect("/plancheck");
+  }
+
+  if (!hasSupabaseConfig()) {
+    return { error: "The list did not take the name. Try once more." };
+  }
+
+  const supabase = supabaseAdmin() ?? anonClient();
   const { error } = await supabase.from("waitlist").insert({
-    user_id: user.id,
-    email: user.email,
+    email: parsed.value.email,
     name: parsed.value.name,
     position: parsed.value.position,
   });
@@ -41,5 +44,12 @@ export async function joinWaitlist(
     return { error: "The list did not take the name. Try once more." };
   }
 
-  redirect("/waitlist?joined=1");
+  redirect(`/waitlist?joined=1&email=${encodeURIComponent(parsed.value.email)}`);
+}
+
+function anonClient() {
+  const { url, key } = requireSupabaseConfig();
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
 }

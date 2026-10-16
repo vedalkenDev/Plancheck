@@ -1,5 +1,8 @@
+const DEFAULT_ALLOWED = ["vedalken.dev@gmail.com", "uwaism0502@gmail.com"];
+
 export function allowedEmails() {
   const listed = [
+    ...DEFAULT_ALLOWED,
     ...(process.env.PLANCHECK_ALLOWED_EMAILS ?? "").split(","),
     ...(process.env.PLANCHECK_ALLOWED_EMAIL ?? "").split(","),
   ];
@@ -10,9 +13,5 @@ export function isAllowedEmail(email: string | null | undefined): email is strin
   if (!email) {
     return false;
   }
-  const allowed = allowedEmails();
-  if (allowed.length === 0) {
-    return false;
-  }
-  return allowed.includes(email.trim().toLowerCase());
+  return allowedEmails().includes(email.trim().toLowerCase());
 }

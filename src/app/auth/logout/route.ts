@@ -1,13 +1,10 @@
 import { NextResponse } from "next/server";
+import { GATE_COOKIE, gateCookieOptions } from "@/lib/auth/gate";
 import { publicOrigin } from "@/lib/auth/paths";
-import { hasSupabaseConfig } from "@/lib/supabase/env";
-import { createServerSupabase } from "@/lib/supabase/server";
 
 export async function POST(request: Request) {
   const origin = publicOrigin(request);
-  if (hasSupabaseConfig()) {
-    const supabase = await createServerSupabase();
-    await supabase.auth.signOut();
-  }
-  return NextResponse.redirect(new URL("/login", origin), 303);
+  const response = NextResponse.redirect(new URL("/login", origin), 303);
+  response.cookies.set(GATE_COOKIE, "", { ...gateCookieOptions(), maxAge: 0 });
+  return response;
 }

@@ -1,6 +1,5 @@
-import { GoogleMark } from "@/components/google-mark";
+import { WaitlistForm } from "@/app/waitlist/waitlist-form";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -8,9 +7,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { isAllowedEmail } from "@/lib/auth/allowlist";
-import { getAuthUser, getOwnWaitlistRow } from "@/lib/auth/session";
-import { WaitlistForm } from "@/app/waitlist/waitlist-form";
+import { parseEmail } from "@/lib/auth/waitlist";
+import { getAllowedUser } from "@/lib/auth/session";
 import { redirect } from "next/navigation";
 
 export const metadata = {
@@ -18,18 +16,21 @@ export const metadata = {
 };
 
 type WaitlistPageProps = {
-  searchParams: Promise<{ joined?: string | string[] }>;
+  searchParams: Promise<{ email?: string | string[]; joined?: string | string[] }>;
 };
 
 export default async function WaitlistPage({ searchParams }: WaitlistPageProps) {
   const params = await searchParams;
-  const user = await getAuthUser();
-  if (user && isAllowedEmail(user.email)) {
+  const user = await getAllowedUser();
+  if (user) {
     redirect("/plancheck");
   }
-  const joinedRow = user ? await getOwnWaitlistRow() : null;
+
+  const emailRaw = Array.isArray(params.email) ? params.email[0] : params.email;
+  const parsedEmail = parseEmail(emailRaw);
+  const email = parsedEmail.ok ? parsedEmail.value : "";
   const joinedFlag = Array.isArray(params.joined) ? params.joined[0] : params.joined;
-  const joined = Boolean(joinedRow) || joinedFlag === "1";
+  const joined = joinedFlag === "1";
 
   return (
     <div className="flex min-h-svh flex-col bg-background">
@@ -37,16 +38,7 @@ export default async function WaitlistPage({ searchParams }: WaitlistPageProps) 
         <p className="font-heading text-xl font-semibold tracking-tight md:text-2xl">
           Plancheck
         </p>
-        <div className="flex items-center gap-3">
-          {user ? (
-            <form action="/auth/logout" method="post">
-              <Button type="submit" variant="outline" size="sm">
-                Sign out
-              </Button>
-            </form>
-          ) : null}
-          <ThemeToggle />
-        </div>
+        <ThemeToggle />
       </header>
       <main className="mx-auto grid w-full max-w-5xl flex-1 items-start gap-12 px-6 py-16 lg:grid-cols-[minmax(0,1.15fr)_minmax(20rem,0.85fr)] lg:items-center lg:py-24">
         <section className="max-w-xl space-y-6">
@@ -67,8 +59,8 @@ export default async function WaitlistPage({ searchParams }: WaitlistPageProps) 
               around that.
             </p>
             <p>
-              Two people can use it now. Everyone else waits. Leave your name.
-              When the door opens, we will write. One letter. No brochure.
+              Leave your name. When the door opens, we will write. One letter.
+              No brochure.
             </p>
           </div>
         </section>
@@ -87,23 +79,10 @@ export default async function WaitlistPage({ searchParams }: WaitlistPageProps) 
             <CardContent>
               {joined ? (
                 <p className="text-sm leading-relaxed text-muted-foreground">
-                  {joinedRow
-                    ? `${joinedRow.name}, ${joinedRow.position}. ${joinedRow.email}.`
-                    : "The name is in. You can close this page."}
+                  {email ? `${email}. ` : ""}The name is in. You can close this page.
                 </p>
-              ) : user ? (
-                <WaitlistForm email={user.email} name={user.name} />
               ) : (
-                <form action="/auth/google" method="post" className="space-y-3">
-                  <p className="text-sm text-muted-foreground">
-                    Sign in with Google. If you are not one of the two, you
-                    land here, not in the product.
-                  </p>
-                  <Button className="w-full" size="lg" type="submit">
-                    <GoogleMark />
-                    Continue with Google
-                  </Button>
-                </form>
+                <WaitlistForm email={email} />
               )}
             </CardContent>
           </Card>
