@@ -16,7 +16,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Fill `.env.local` with the PlanCheck Supabase URL and publishable key. Waitlist inserts use that project. Sign-in is an email field; it does not use Google.
+Fill `.env.local` with the PlanCheck Supabase URL and publishable key, plus `WAITLIST_SHEET_URL` and `WAITLIST_SECRET`. Sign-in is an email field; it does not use Google.
 
 Open [http://127.0.0.1:43173/login](http://127.0.0.1:43173/login). Unauthenticated visits to `/` and `/plancheck` redirect there.
 
@@ -27,7 +27,7 @@ npm run build
 
 ## Sign-in
 
-Write an email on `/login`. Allowed addresses open `/plancheck`. Any other address lands on `/waitlist`, where we collect name, email, and position into the `waitlist` table.
+Write an email on `/login`. Allowed addresses open `/plancheck`. Any other address lands on `/waitlist`, where we collect name, email, and position into the waitlist sheet.
 
 ## Flow
 

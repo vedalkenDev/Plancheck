@@ -3,7 +3,13 @@ import { afterEach, describe, it } from "node:test";
 import { allowedEmails, isAllowedEmail } from "./allowlist";
 import { readGate, sealGate } from "./gate";
 import { isPublicPath, publicOrigin, safeNextPath } from "./paths";
-import { parseEmail, parseWaitlistFields } from "./waitlist";
+import {
+  clientIp,
+  mapWaitlistSheetResult,
+  parseEmail,
+  parseWaitlistFields,
+  rateLimitWaitlist,
+} from "./waitlist";
 
 const originalAllowed = process.env.PLANCHECK_ALLOWED_EMAIL;
 const originalAllowedList = process.env.PLANCHECK_ALLOWED_EMAILS;
@@ -86,7 +92,23 @@ describe("parseWaitlistFields", () => {
     assert.equal(
       parseWaitlistFields({
         email: "ok@office.test",
+        name: "",
+        position: "Principal",
+      }).ok,
+      false,
+    );
+    assert.equal(
+      parseWaitlistFields({
+        email: "ok@office.test",
         name: "A",
+        position: "I",
+      }).ok,
+      true,
+    );
+    assert.equal(
+      parseWaitlistFields({
+        email: "ok@office.test",
+        name: "a".repeat(101),
         position: "Principal",
       }).ok,
       false,
@@ -98,6 +120,43 @@ describe("parseWaitlistFields", () => {
         position: "",
       }).ok,
       false,
+    );
+  });
+});
+
+describe("waitlist sheet results", () => {
+  it("reads the client ip from the first forwarded address", () => {
+    assert.equal(clientIp("203.0.113.5, 10.0.0.1"), "203.0.113.5");
+    assert.equal(clientIp(null), "unknown");
+  });
+
+  it("allows five submissions per ten minutes, then blocks", () => {
+    const ip = "203.0.113.50";
+    const start = 1_700_000_000_000;
+    for (let i = 0; i < 5; i += 1) {
+      assert.equal(rateLimitWaitlist(ip, start), false);
+    }
+    assert.equal(rateLimitWaitlist(ip, start + 1), true);
+    assert.equal(rateLimitWaitlist("203.0.113.51", start + 1), false);
+    assert.equal(rateLimitWaitlist(ip, start + 10 * 60 * 1000), false);
+  });
+
+  it("maps sheet results to the form state", () => {
+    assert.deepEqual(mapWaitlistSheetResult({ ok: true }), {
+      error: null,
+      success: "You're on the list. We'll be in touch.",
+    });
+    assert.deepEqual(mapWaitlistSheetResult({ ok: false, error: "duplicate" }), {
+      error: null,
+      success: "You're already on the list.",
+    });
+    assert.equal(
+      mapWaitlistSheetResult({ ok: false, error: "invalid_email" }).error,
+      "Write an email address.",
+    );
+    assert.equal(
+      mapWaitlistSheetResult({ ok: false, error: "busy" }).error,
+      "Something went wrong. Please try again.",
     );
   });
 });

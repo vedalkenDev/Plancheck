@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 
-const initial: JoinWaitlistState = { error: null };
+const initial: JoinWaitlistState = { error: null, success: null };
 
 type WaitlistFormProps = {
   email?: string;
@@ -16,8 +16,23 @@ type WaitlistFormProps = {
 export function WaitlistForm({ email = "" }: WaitlistFormProps) {
   const [state, action] = useActionState(joinWaitlist, initial);
 
+  if (state.success) {
+    return (
+      <p className="text-sm leading-relaxed text-muted-foreground">{state.success}</p>
+    );
+  }
+
   return (
     <form action={action} className="space-y-4">
+      <input
+        type="text"
+        name="website"
+        tabIndex={-1}
+        autoComplete="off"
+        aria-hidden="true"
+        className="sr-only"
+        defaultValue=""
+      />
       <Field
         id="waitlist-name"
         name="name"
@@ -86,7 +101,7 @@ function Submit() {
   const { pending } = useFormStatus();
   return (
     <Button className="w-full" size="lg" type="submit" disabled={pending}>
-      {pending ? "Saving the name…" : "Put my name on the list"}
+      {pending ? "Joining..." : "Put my name on the list"}
     </Button>
   );
 }
