@@ -17,9 +17,30 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Plancheck — Vedalken Dev",
+  metadataBase: new URL("https://plancheck-eight.vercel.app"),
+  title: "Plancheck",
   description:
-    "Upload a .dwg. Get a pass/fail checklist against SANS 10400 before you submit. Finding first. Fixing is the job.",
+    "Upload a .dwg. Get a pass/fail checklist against SANS 10400 before you submit.",
+  openGraph: {
+    type: "website",
+    url: "/",
+    siteName: "Plancheck",
+    title: "Plancheck",
+    description:
+      "Upload a .dwg. Get a pass/fail checklist against SANS 10400 before you submit.",
+    images: [
+      {
+        url: "/og/main@2x.png",
+        width: 2400,
+        height: 1260,
+        alt: "Plancheck. Check plans against SANS 10400.",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    images: ["/og/main@2x.png"],
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

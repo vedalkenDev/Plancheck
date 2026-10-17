@@ -9,10 +9,31 @@ import {
 } from "@/components/ui/card";
 import { parseEmail } from "@/lib/auth/waitlist";
 import { getAllowedUser } from "@/lib/auth/session";
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
-export const metadata = {
-  title: "The list — Plancheck",
+export const metadata: Metadata = {
+  title: "Plancheck waitlist",
+  description: "The drawing should fail in your office. Not at the counter.",
+  openGraph: {
+    type: "website",
+    url: "/waitlist",
+    siteName: "Plancheck",
+    title: "Plancheck waitlist",
+    description: "The drawing should fail in your office. Not at the counter.",
+    images: [
+      {
+        url: "/og/waitlist@2x.png",
+        width: 2400,
+        height: 1260,
+        alt: "Plancheck waitlist. The drawing should fail in your office. Not at the counter.",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    images: ["/og/waitlist@2x.png"],
+  },
 };
 
 type WaitlistPageProps = {
