@@ -1,0 +1,23 @@
+.scan-loader {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.scan-loader .iso-figure {
+  margin: 0;
+  max-width: 100%;
+}
+
+.scan-loader .iso-svg {
+  max-width: 100%;
+}
+
+.scan-stage {
+  touch-action: pan-y;
+  border-radius: 2px;
+}
+
+.scan-stage:focus-visible {
+  outline: 1px solid var(--anatomy-muted);
+  outline-offset: 6px;
+}
