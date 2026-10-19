@@ -1,4 +1,8 @@
-const DEFAULT_ALLOWED = ["vedalken.dev@gmail.com", "uwaism0502@gmail.com"];
+const DEFAULT_ALLOWED = [
+  "vedalken.dev@gmail.com",
+  "uwaism0502@gmail.com",
+  "mssd1812@gmail.com",
+];
 
 export function allowedEmails() {
   const listed = [

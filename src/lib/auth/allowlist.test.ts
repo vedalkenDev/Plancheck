@@ -32,15 +32,17 @@ function restore(name: string, value: string | undefined) {
 }
 
 describe("isAllowedEmail", () => {
-  it("always allows the two private addresses, even with an empty env list", () => {
+  it("always allows the private addresses, even with an empty env list", () => {
     delete process.env.PLANCHECK_ALLOWED_EMAIL;
     delete process.env.PLANCHECK_ALLOWED_EMAILS;
     assert.deepEqual(allowedEmails(), [
       "vedalken.dev@gmail.com",
       "uwaism0502@gmail.com",
+      "mssd1812@gmail.com",
     ]);
     assert.equal(isAllowedEmail("Vedalken.dev@gmail.com"), true);
     assert.equal(isAllowedEmail("uwaism0502@gmail.com"), true);
+    assert.equal(isAllowedEmail("Mssd1812@gmail.com"), true);
     assert.equal(isAllowedEmail("other@gmail.com"), false);
     assert.equal(isAllowedEmail(null), false);
   });
