@@ -16,7 +16,10 @@ type Matrix = [number, number, number, number, number, number];
 const IDENTITY: Matrix = [1, 0, 0, 1, 0, 0];
 
 /** Walk pdf.js constructPath ops so wall geometry is on the extract, not just labels. */
-export async function extractPagePaths(pdf: PdfDoc, pageNumber: number): Promise<GeomEntity[]> {
+export async function extractPagePaths(
+  pdf: PdfDoc,
+  pageNumber: number,
+): Promise<{ geometry: GeomEntity[]; width: number; height: number }> {
   const pdfjs = await getResolvedPDFJS();
   const ops = pdfjs.OPS;
   const page = await pdf.getPage(pageNumber);
@@ -89,7 +92,7 @@ export async function extractPagePaths(pdf: PdfDoc, pageNumber: number): Promise
     }
   }
 
-  return geometry;
+  return { geometry, width: viewport.width, height: viewport.height };
 }
 
 function firstPacked(value: unknown): ArrayLike<number> | null {

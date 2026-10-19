@@ -2,11 +2,21 @@ import type { AuditSample } from "@/data/types";
 import type { DrawingExtract, GeomEntity, Point } from "@/lib/cad/extract";
 import { geometryBounds } from "@/lib/cad/preview";
 import { wrapText } from "@/lib/cad/preview";
+import { cardsFromAudit, layoutNoteCards, type PlacedCard } from "@/lib/pdf/space";
 
 const STAMP_LAYERS = new Set(["COUNCIL_CHECK", "COUNCIL_FIXES"]);
 
 export function stampAudit(extract: DrawingExtract, audit: AuditSample): DrawingExtract {
   const base = extract.geometry.filter((entity) => !STAMP_LAYERS.has(entity.layer ?? ""));
+  const pageW = extract.pageWidth;
+  const pageH = extract.pageHeight;
+  if (pageW && pageH && pageW > 1 && pageH > 1) {
+    const { placed } = layoutNoteCards(base, { width: pageW, height: pageH }, cardsFromAudit(audit));
+    return {
+      ...extract,
+      geometry: [...base, ...cardsToGeometry(placed)],
+    };
+  }
   const bounds = geometryBounds(base);
   const span = bounds
     ? Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY, 1)
@@ -20,6 +30,48 @@ export function stampAudit(extract: DrawingExtract, audit: AuditSample): Drawing
     ...extract,
     geometry: [...base, ...placed],
   };
+}
+
+function cardsToGeometry(placed: PlacedCard[]): GeomEntity[] {
+  const out: GeomEntity[] = [];
+  for (const { card, rect } of placed) {
+    const fail = card.id !== "verdict";
+    out.push({
+      kind: "polyline",
+      layer: fail ? "COUNCIL_FIXES" : "COUNCIL_CHECK",
+      color: fail ? "#b91c1c" : "#1c1917",
+      closed: true,
+      points: [
+        { x: rect.x, y: rect.y },
+        { x: rect.x + rect.w, y: rect.y },
+        { x: rect.x + rect.w, y: rect.y + rect.h },
+        { x: rect.x, y: rect.y + rect.h },
+      ],
+    });
+    const height = 8;
+    const pad = 6;
+    const leading = height * 1.45;
+    const lines = [
+      ...wrapText(card.title, rect.w - pad * 2, height).slice(0, 2),
+      ...wrapText(card.body, rect.w - pad * 2, height),
+    ].slice(0, Math.max(1, Math.floor((rect.h - pad) / leading)));
+    lines.forEach((text, index) => {
+      out.push({
+        kind: "text",
+        layer: index === 0 || !fail ? "COUNCIL_CHECK" : "COUNCIL_FIXES",
+        color: fail && index === 0 ? "#b91c1c" : "#1c1917",
+        p: {
+          x: rect.x + pad,
+          y: rect.y + rect.h - pad - height * 0.15 - leading * index,
+        },
+        height,
+        width: rect.w - pad * 2,
+        value: text,
+        valign: "top",
+      });
+    });
+  }
+  return out;
 }
 
 function stampLines(audit: AuditSample, column: number, height: number) {

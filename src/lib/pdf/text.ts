@@ -13,6 +13,7 @@ export type PdfLine = {
   x: number;
   y: number;
   height: number;
+  width: number;
 };
 
 /** CAD plots often emit one glyph per Tj. Join those back into readable notes. */
@@ -55,11 +56,13 @@ export function reconstructPdfLines(items: PdfGlyph[]): PdfLine[] {
     for (const run of splitRuns(band)) {
       const value = joinRun(run);
       if (value) {
+        const last = run[run.length - 1];
         lines.push({
           value,
           x: run[0].x,
           y: run[0].y,
           height: Math.max(...run.map((item) => item.height)),
+          width: Math.max(last.x + last.width - run[0].x, 0),
         });
       }
     }

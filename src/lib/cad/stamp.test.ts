@@ -95,4 +95,30 @@ describe("stampAudit", () => {
     );
     assert.equal(frames.length, 1);
   });
+
+  it("parks PDF notes in empty page margin, not on the plan", () => {
+    const drawing = sheet(true);
+    drawing.format = "pdf";
+    drawing.geometry = drawing.geometry.filter(
+      (entity) => entity.kind === "line" || entity.kind === "text",
+    );
+    drawing.pageWidth = 1000;
+    drawing.pageHeight = 700;
+    drawing.sheets[0] = {
+      ...drawing.sheets[0],
+      geometry: drawing.geometry,
+      width: 1000,
+      height: 700,
+    };
+    const stamped = stampAudit(drawing, audit);
+    const notes = stamped.geometry.filter(
+      (entity) =>
+        entity.kind === "text" &&
+        (entity.layer === "COUNCIL_CHECK" || entity.layer === "COUNCIL_FIXES"),
+    );
+    assert.ok(notes.length >= 1);
+    for (const note of notes) {
+      assert.ok(note.p.x > 400, `note at x=${note.p.x} sits on the plan`);
+    }
+  });
 });

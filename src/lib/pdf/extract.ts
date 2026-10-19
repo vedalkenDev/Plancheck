@@ -27,16 +27,33 @@ export async function extractPdf(
     const pageTexts: DrawingText[] = lines.map((line) => ({ kind: "text" as const, value: line.value }));
     const pageStrings = uniqueLines(pageTexts.map((item) => item.value));
     let pageGeometry: GeomEntity[] = [];
+    let width = 0;
+    let height = 0;
     try {
-      pageGeometry = await extractPagePaths(pdf, page + 1);
+      const paths = await extractPagePaths(pdf, page + 1);
+      pageGeometry = paths.geometry;
+      width = paths.width;
+      height = paths.height;
     } catch {
       pageGeometry = [];
+    }
+    if (!width || !height) {
+      try {
+        const pdfPage = await pdf.getPage(page + 1);
+        const viewport = pdfPage.getViewport({ scale: 1 });
+        width = viewport.width;
+        height = viewport.height;
+      } catch {
+        width = 595.28;
+        height = 841.89;
+      }
     }
     for (const line of lines) {
       pageGeometry.push({
         kind: "text",
         p: { x: line.x, y: line.y },
         height: line.height || 12,
+        width: line.width,
         value: line.value,
       });
     }
@@ -50,6 +67,8 @@ export async function extractPdf(
       geometry: pageGeometry,
       texts: pageTexts,
       strings: pageStrings,
+      width,
+      height,
     });
     texts.push(...pageTexts);
     strings.push(...pageStrings);
@@ -57,6 +76,7 @@ export async function extractPdf(
   }
 
   void filename;
+  const first = sheets[0];
   return {
     format: "pdf",
     texts,
@@ -64,5 +84,7 @@ export async function extractPdf(
     entityCounts,
     geometry,
     sheets,
+    pageWidth: first?.width,
+    pageHeight: first?.height,
   };
 }

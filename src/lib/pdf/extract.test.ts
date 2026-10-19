@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import { PDFDocument } from "pdf-lib";
 import { auditFromDrawing } from "../cad/audit-from-drawing";
 import { extractDrawing } from "../cad/extract";
+import { geometryBounds } from "../cad/preview";
 import { extractPdf } from "./extract";
 import { marineDriveGlyphPdf, marineDriveNotesPdf } from "./fixture";
 import { plotDrawingPdf } from "./plot";
@@ -45,11 +46,24 @@ describe("pdf council set", () => {
     assert.ok(failed.includes("eng-packs"));
     assert.ok(audit.passed.map((row) => row.id).includes("window-schedule"));
 
-    const stamped = await stampPdf(bytes, audit);
+    const stamped = await stampPdf(bytes, audit, extract);
     const annotated = await PDFDocument.load(stamped);
-    assert.equal(annotated.getPageCount(), 2);
-    const field = annotated.getForm().getTextField("plancheck.fail.xa-fenestration");
-    assert.match(field.getText() ?? "", /SANS 204/);
+    assert.ok(annotated.getPageCount() >= 1);
+
+    const placed = await extractPdf("marine-drive-notes-stamped.pdf", stamped);
+    assert.ok(placed.strings.some((line) => /PLANCHECK/i.test(line)));
+    const label = placed.geometry.find(
+      (entity) => entity.kind === "text" && /PLANCHECK/i.test(entity.value),
+    );
+    assert.ok(label && label.kind === "text");
+    const onRect =
+      label.p.x >= 510 && label.p.x <= 790 && label.p.y >= 70 && label.p.y <= 510;
+    assert.equal(onRect, false);
+
+    if (annotated.getPageCount() > 1) {
+      const field = annotated.getForm().getTextField("plancheck.fail.xa-fenestration");
+      assert.match(field.getText() ?? "", /SANS 204/);
+    }
   });
 
   it("reassembles glyph-split CAD plot text into the Marine Drive notes", async () => {
@@ -81,6 +95,30 @@ describe("pdf council set", () => {
 
     const audit = auditFromDrawing("747-villa.pdf", extract);
     assert.equal(audit.failed.some((row) => row.id === "readable-text"), false);
+    assert.ok(extract.pageWidth && extract.pageWidth > 200);
+    assert.ok(extract.pageHeight && extract.pageHeight > 200);
+  });
+
+  it("stamps villa notes into empty paper instead of covering the plan", async () => {
+    const bytes = loadSample("747-villa.pdf");
+    const extract = await extractPdf("747-villa.pdf", bytes);
+    const audit = auditFromDrawing("747-villa.pdf", extract);
+    const stamped = await stampPdf(bytes, audit, extract);
+    const placed = await extractPdf("747-villa-stamped.pdf", stamped);
+    assert.ok(placed.strings.some((line) => /PLANCHECK/i.test(line)));
+    const label = placed.geometry.find(
+      (entity) => entity.kind === "text" && /PLANCHECK/i.test(entity.value),
+    );
+    assert.ok(label && label.kind === "text");
+    const plan = geometryBounds(extract.geometry.filter((entity) => entity.kind !== "text"));
+    assert.ok(plan);
+    assert.ok(
+      label.p.x < plan.minX - 4 ||
+        label.p.x > plan.maxX + 4 ||
+        label.p.y < plan.minY - 4 ||
+        label.p.y > plan.maxY + 4,
+      `PLANCHECK at ${label.p.x},${label.p.y} is on the plan ${plan.minX}..${plan.maxX} x ${plan.minY}..${plan.maxY}`,
+    );
   });
 
   it("reads the plotted Marine Drive DXF sheet as a council PDF", async () => {

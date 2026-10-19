@@ -44,6 +44,8 @@ export type DrawingSheet = {
   geometry: GeomEntity[];
   texts: DrawingText[];
   strings: string[];
+  width?: number;
+  height?: number;
 };
 
 export type DrawingExtract = {
@@ -53,6 +55,8 @@ export type DrawingExtract = {
   entityCounts: Record<string, number>;
   geometry: GeomEntity[];
   sheets: DrawingSheet[];
+  pageWidth?: number;
+  pageHeight?: number;
 };
 
 const JUNK =
