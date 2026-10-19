@@ -40,7 +40,11 @@ export function auditToReport(audit: AuditSample): string {
     .concat("\n");
 }
 
-export function downloadBlob(filename: string, contents: string, mime: string) {
+export function downloadBlob(
+  filename: string,
+  contents: string | Uint8Array | ArrayBuffer,
+  mime: string,
+) {
   const blob = new Blob([contents], { type: mime });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");

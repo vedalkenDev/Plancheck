@@ -26,13 +26,15 @@ import { addVisibleText } from "@/lib/cad/annotate";
 import { dwgToDxf } from "@/lib/cad/dwg-to-dxf";
 import type { DrawingExtract } from "@/lib/cad/extract";
 import { DISCLAIMER, auditToReport, downloadBlob } from "@/lib/checklist";
+import { extractPdf } from "@/lib/pdf/extract";
+import { stampPdf } from "@/lib/pdf/stamp";
 
 type PlancheckAppProps = {
   samples: SampleDrawing[];
   userEmail: string;
 };
 
-const DRAWING_NAME = /\.(dwg|dxf)$/i;
+const DRAWING_NAME = /\.(dwg|dxf|pdf)$/i;
 const MAX_BYTES = 40 * 1024 * 1024;
 const MIN_SPIN_MS = 700;
 
@@ -44,12 +46,21 @@ function bytesOf(text: string) {
 }
 
 async function readDrawing(filename: string, bytes: ArrayBuffer) {
+  if (/\.pdf$/i.test(filename)) {
+    return {
+      drawing: await extractPdf(filename, bytes),
+      sourceText: null as string | null,
+      pdfBytes: bytes.slice(0),
+    };
+  }
+
   if (/\.dwg$/i.test(filename)) {
     const dxf = await dwgToDxf(bytes);
     if (dxf) {
       return {
         drawing: extractDrawing(filename.replace(/\.dwg$/i, ".dxf"), bytesOf(dxf)),
         sourceText: dxf,
+        pdfBytes: null as ArrayBuffer | null,
       };
     }
   }
@@ -57,6 +68,7 @@ async function readDrawing(filename: string, bytes: ArrayBuffer) {
   return {
     drawing: extractDrawing(filename, bytes),
     sourceText: new TextDecoder("utf-8", { fatal: false }).decode(bytes),
+    pdfBytes: null as ArrayBuffer | null,
   };
 }
 
@@ -67,6 +79,7 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
   const [drawingName, setDrawingName] = useState("drawing");
   const [sheetIndex, setSheetIndex] = useState(0);
   const [sourceText, setSourceText] = useState<string | null>(null);
+  const [pdfBytes, setPdfBytes] = useState<ArrayBuffer | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
   const [done, setDone] = useState<Record<string, boolean>>({});
@@ -79,6 +92,7 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
     setExtract(null);
     setSheetIndex(0);
     setSourceText(null);
+    setPdfBytes(null);
     setError(null);
     setReading(false);
     resetChecks();
@@ -109,14 +123,16 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
           setTimeout(resolve, MIN_SPIN_MS);
         }),
       ]);
-      const { drawing, sourceText: nextText } = await readDrawing(file.name, bytes);
+      const { drawing, sourceText: nextText, pdfBytes: nextPdf } = await readDrawing(file.name, bytes);
       setDrawingName(file.name);
       setExtract(drawing);
       setSourceText(nextText);
+      setPdfBytes(nextPdf);
     } catch {
-      setError("The drawing could not be read. Export it from CAD and try again.");
+      setError("The drawing could not be read. Plot a vector PDF from CAD, or export DWG / DXF, and try again.");
       setExtract(null);
       setSourceText(null);
+      setPdfBytes(null);
     } finally {
       setReading(false);
     }
@@ -146,10 +162,11 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
       }
       const bytes = await response.arrayBuffer();
       const filename = sample.href.split("/").pop() ?? `${sample.id}.dxf`;
-      const { drawing, sourceText: nextText } = await readDrawing(filename, bytes);
+      const { drawing, sourceText: nextText, pdfBytes: nextPdf } = await readDrawing(filename, bytes);
       setDrawingName(sample.label);
       setExtract(drawing);
       setSourceText(nextText);
+      setPdfBytes(nextPdf);
     } catch {
       setError("The sample drawing could not be loaded.");
     } finally {
@@ -216,13 +233,14 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
             id={inputId}
             className="sr-only"
             type="file"
-            accept=".dwg,.dxf,application/acad,image/vnd.dwg,image/vnd.dxf"
+            accept=".pdf,.dwg,.dxf,application/pdf,application/acad,image/vnd.dwg,image/vnd.dxf"
             onChange={(event) => void onFile(event.target.files?.[0])}
           />
           {viewed && !reading ? (
             <DrawingPane
               extract={viewed.extract}
               sourceText={sourceText}
+              pdfBytes={pdfBytes}
               label={viewed.audit.label}
               audit={viewed.audit}
               sheets={viewed.sheets}
@@ -280,8 +298,8 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
                 <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
                   <FileUp className="size-8 text-muted-foreground" />
                   <p className="max-w-xs text-sm leading-relaxed">
-                    Drag a drawing file here, or click here to inspect your
-                    drawing for council plan submission.
+                    Drag a council PDF here, or a DWG / DXF. Click to inspect
+                    the drawing for council plan submission.
                   </p>
                 </div>
               )}
@@ -323,6 +341,7 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
                 extract={viewed.extract}
                 sheetName={viewed.sheets[viewed.index]?.name ?? "Sheet 1"}
                 sourceText={sourceText}
+                pdfBytes={pdfBytes}
                 done={done}
                 setDone={setDone}
               />
@@ -339,6 +358,7 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
 function DrawingPane({
   extract,
   sourceText,
+  pdfBytes,
   label,
   audit,
   sheets,
@@ -351,6 +371,7 @@ function DrawingPane({
 }: {
   extract: DrawingExtract;
   sourceText: string | null;
+  pdfBytes: ArrayBuffer | null;
   label: string;
   audit: AuditSample | null;
   sheets: { name: string }[];
@@ -362,6 +383,7 @@ function DrawingPane({
   onChange: (next: { extract: DrawingExtract; sourceText: string | null }) => void;
 }) {
   const [fullscreen, setFullscreen] = useState(false);
+  const pdf = extract.format === "pdf";
 
   return (
     <>
@@ -373,13 +395,19 @@ function DrawingPane({
           </Button>
         </div>
         <SheetTabs sheets={sheets} sheetIndex={sheetIndex} onSheet={onSheet} />
-        <NoteForm extract={extract} sourceText={sourceText} onChange={onChange} />
+        {pdf ? null : (
+          <NoteForm extract={extract} sourceText={sourceText} onChange={onChange} />
+        )}
         <div className="min-h-0 flex-1 overflow-hidden rounded-lg border">
-          <DrawingPreview
-            extract={extract}
-            label={label}
-            onToggleFullscreen={() => setFullscreen(true)}
-          />
+          {pdf && pdfBytes ? (
+            <PdfPreview bytes={pdfBytes} label={label} />
+          ) : (
+            <DrawingPreview
+              extract={extract}
+              label={label}
+              onToggleFullscreen={() => setFullscreen(true)}
+            />
+          )}
         </div>
       </div>
       {fullscreen ? (
@@ -567,8 +595,8 @@ function EmptyState() {
   return (
     <div className="flex min-h-[24rem] flex-col items-center justify-center text-center text-muted-foreground">
       <p className="max-w-md text-sm">
-        Upload a drawing to inspect it against SANS 10400 before you lodge with
-        council.
+        Upload the council PDF (or a DWG / DXF) to inspect it against SANS 10400
+        before you lodge.
       </p>
     </div>
   );
@@ -590,11 +618,29 @@ function InspectingState() {
   );
 }
 
+function PdfPreview({ bytes, label }: { bytes: ArrayBuffer; label: string }) {
+  const url = useMemo(() => {
+    const blob = new Blob([bytes], { type: "application/pdf" });
+    return URL.createObjectURL(blob);
+  }, [bytes]);
+
+  useEffect(() => () => URL.revokeObjectURL(url), [url]);
+
+  return (
+    <iframe
+      title={label}
+      src={url}
+      className="h-full min-h-[22rem] w-full bg-background"
+    />
+  );
+}
+
 function Analysis({
   audit,
   extract,
   sheetName,
   sourceText,
+  pdfBytes,
   done,
   setDone,
 }: {
@@ -602,6 +648,7 @@ function Analysis({
   extract: DrawingExtract | null;
   sheetName: string;
   sourceText: string | null;
+  pdfBytes: ArrayBuffer | null;
   done: Record<string, boolean>;
   setDone: (value: Record<string, boolean>) => void;
 }) {
@@ -618,7 +665,16 @@ function Analysis({
     );
   }
 
-  function downloadDrawing() {
+  async function downloadDrawing() {
+    if (pdfBytes) {
+      const annotated = await stampPdf(pdfBytes, audit);
+      downloadBlob(
+        `${audit.fileStem}-annotated.pdf`,
+        annotated,
+        "application/pdf",
+      );
+      return;
+    }
     if (!extract) {
       return;
     }
@@ -753,8 +809,13 @@ function Analysis({
       </Card>
 
       <div className="flex flex-wrap gap-2">
-        <Button type="button" variant="outline" onClick={downloadDrawing} disabled={!extract}>
-          Download annotated drawing
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => void downloadDrawing()}
+          disabled={!extract && !pdfBytes}
+        >
+          {pdfBytes ? "Download annotated PDF" : "Download annotated drawing"}
         </Button>
         <Button type="button" variant="outline" onClick={downloadChecklist}>
           Download checklist

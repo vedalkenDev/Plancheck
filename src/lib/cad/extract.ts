@@ -47,7 +47,7 @@ export type DrawingSheet = {
 };
 
 export type DrawingExtract = {
-  format: "dxf" | "dwg" | "unknown";
+  format: "dxf" | "dwg" | "pdf" | "unknown";
   texts: DrawingText[];
   strings: string[];
   entityCounts: Record<string, number>;
