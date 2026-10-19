@@ -20,14 +20,14 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://plancheck-eight.vercel.app"),
   title: "Plancheck",
   description:
-    "Upload a .dwg. Get a pass/fail checklist against SANS 10400 before you submit.",
+    "Upload a PDF. Get a pass/fail checklist against SANS 10400 before you submit.",
   openGraph: {
     type: "website",
     url: "/",
     siteName: "Plancheck",
     title: "Plancheck",
     description:
-      "Upload a .dwg. Get a pass/fail checklist against SANS 10400 before you submit.",
+      "Upload a PDF. Get a pass/fail checklist against SANS 10400 before you submit.",
     images: [
       {
         url: "/og/main@2x.png",

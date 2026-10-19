@@ -10,23 +10,24 @@ This is a **pre-submission audit**. It is not a stamp, not municipal approval, a
 - **Offer:** finding first; fixing is the job. Luqmaan Sayed on the work.
 - **Path:** [vedalken.dev/plancheck](https://vedalken.dev/plancheck)
 - **Repo:** [github.com/vedalkenDev/Plancheck](https://github.com/vedalkenDev/Plancheck) is the live line. Dark dashboard is the UI: Plancheck left, Vedalken Dev right, drawing on the left third, analysis on the rest. Do not restore the cream paper canvas.
-- **Flow:** upload a drawing (`.dwg` / `.dxf`) → pass/fail checklist + annotated drawing.
-- **Downloads:** checklist as `.txt` (printable). Never ship Markdown as the user-facing checklist. Annotated output is a real drawing file with notes/schedules — never a text file renamed `.dwg`.
+- **Flow:** upload a council PDF → pass/fail checklist + annotated PDF. Notes pack into empty paper around the drawing.
+- **Downloads:** checklist as `.txt` (printable). Never ship Markdown as the user-facing checklist. Annotated output is the same PDF with fixtures in empty space on the sheet.
 - **Copy:** say “drawing” and “checklist”. Do not say DXF, MTEXT, or layer names in the UI.
 - **Occupancy:** read from the drawing. Never hardcode one class for every upload. H4 is a dwelling; G1 can be medical offices; A20 is a *regulation*, not an occupancy class.
 
 ## Proven engine pipeline
 
 ```
-DWG → DXF (ODA File Converter, server-side when available)
-    → parse (layers, text, dimensions)
+PDF (vector plot from CAD)
+    → reconstruct printed notes + wall paths
+    → occupy the plan as a block, pack notes into empty paper
     → route via Council of Six SANS index (part letter → PDF → headings; do not ingest the whole pack)
-    → PASSED / FAILED(+ADJUST) + drawing annotations
+    → PASSED / FAILED(+ADJUST) + on-sheet note cards (overflow page only if a pocket will not fit)
 ```
 
-Annotation layers (CAD, not UI jargon): `COUNCIL_CHECK`, `WIN_SCHED`, `COUNCIL_FIXES`, `WINDOW_DIMS`.
+Annotation layers (preview, not UI jargon): `COUNCIL_CHECK`, `WIN_SCHED`, `COUNCIL_FIXES`, `WINDOW_DIMS`.
 
-**This browser MVP** parses DXF in the client, scrapes readable strings from binary DWG, and writes an **annotated DXF**. It does **not** run ODA or ezdxf. Real DWG-in / DWG-out needs a server-side CAD worker (ODA). Until that exists, the annotated download is DXF that CAD can open.
+**This browser MVP** imports PDF and exports PDF. CAD parsers remain as fixtures for tests. Do not put failed-check cards on the floor plan.
 
 ## SANS drawing rules (index, not the book)
 
@@ -44,7 +45,7 @@ Do not dump full SANS book text into the repo or the UI.
 ```ts
 passed[]: { id, part, check, detail }
 failed[]: { id, part, check, detail, adjust } // specific + numeric when possible
-files: checklist_txt + annotated_dwg // annotated_dwg = real CAD; DXF until ODA DWG write exists
+files: checklist_txt + annotated_pdf // notes in empty paper on the sheet
 ```
 
 FAILED rows must say **what to change** and **by how much** when numbers exist.
@@ -70,11 +71,9 @@ Correct the engine if it diverges from these.
 
 ## What still needs a CAD worker
 
-| Capability | Browser now | Needs ODA (or equivalent) worker |
+| Capability | Browser now | Later |
 |---|---|---|
-| Read DXF text + geometry | Yes | — |
-| Read binary DWG titles/notes | Partial (string scrape) | Full DWG→DXF |
-| ezdxf-quality layers/dims | Partial DXF | Yes |
-| Annotated DXF with council layers | Yes | — |
-| Annotated **DWG** out | No | Yes (ODA write) |
-| True window pane dimensions from geometry | Not yet | Better with ODA + ezdxf |
+| Read council PDF notes + wall paths | Yes | Scanned sheets |
+| Pack failed checks into empty paper | Yes | — |
+| Annotated **PDF** out | Yes | — |
+| True window pane dimensions from geometry | Not yet | Better with CAD geometry |

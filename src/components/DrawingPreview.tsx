@@ -28,7 +28,17 @@ export function DrawingPreview({
   fullscreen = false,
   onToggleFullscreen,
 }: DrawingPreviewProps) {
-  const bounds = useMemo(() => geometryBounds(extract.geometry), [extract.geometry]);
+  const bounds = useMemo(() => {
+    if (extract.pageWidth && extract.pageHeight) {
+      return {
+        minX: 0,
+        minY: 0,
+        maxX: extract.pageWidth,
+        maxY: extract.pageHeight,
+      };
+    }
+    return geometryBounds(extract.geometry);
+  }, [extract.geometry, extract.pageHeight, extract.pageWidth]);
   const hostRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const viewSizeRef = useRef({ w: 320, h: 480 });

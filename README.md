@@ -32,6 +32,6 @@ Write an email on `/login`. Allowed addresses open `/plancheck`. Any other addre
 ## Flow
 
 1. Enter an allowed email, or leave a name on the list.
-2. Choose a drawing file (.dwg or .dxf), or run a sample.
+2. Choose a council PDF, or run a sample.
 3. Read the pass/fail tables. Failed items include what to adjust.
-4. Download a `.txt` checklist and an annotated drawing. Real DWG-out needs a server-side CAD worker (ODA) — see the handoff.
+4. Download a `.txt` checklist and an annotated PDF. Notes sit in empty paper around the drawing, not on the plan.
