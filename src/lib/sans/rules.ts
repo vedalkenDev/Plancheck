@@ -38,7 +38,7 @@ export const SANS_RULES: Rule[] = [
     part: "A",
     check: "Readable drawing text",
     run: (ctx) => {
-      if (ctx.extract.strings.length >= 8) {
+      if (ctx.extract.strings.length >= 5) {
         return { status: "skip" };
       }
       return {

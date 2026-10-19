@@ -36,7 +36,7 @@ export function auditFromDrawing(
       "This DWG could not be converted. Plancheck read titles and notes only. Export DXF from CAD for a fuller preview and annotated drawing.",
     );
   }
-  if (extract.format === "pdf" && extract.strings.length < 8) {
+  if (extract.format === "pdf" && extract.strings.length < 5) {
     warnings.push(
       "This PDF has little readable text. Plot from CAD as a vector PDF so titles, notes, and schedules stay selectable. Scanned sheets cannot be checked yet.",
     );

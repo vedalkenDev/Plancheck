@@ -384,6 +384,7 @@ function DrawingPane({
 }) {
   const [fullscreen, setFullscreen] = useState(false);
   const pdf = extract.format === "pdf";
+  const drawn = extract.geometry.some((entity) => entity.kind !== "text");
 
   return (
     <>
@@ -399,7 +400,7 @@ function DrawingPane({
           <NoteForm extract={extract} sourceText={sourceText} onChange={onChange} />
         )}
         <div className="min-h-0 flex-1 overflow-hidden rounded-lg border">
-          {pdf && pdfBytes ? (
+          {pdf && pdfBytes && !drawn ? (
             <PdfPreview bytes={pdfBytes} label={label} />
           ) : (
             <DrawingPreview
