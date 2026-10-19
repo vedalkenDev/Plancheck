@@ -11,7 +11,7 @@ export function auditFromDrawing(
   extract: DrawingExtract,
 ): AuditSample {
   const blob = extract.strings.join("\n");
-  const fileStem = slugify(filename.replace(/\.(dwg|dxf)$/i, "") || "drawing");
+  const fileStem = slugify(filename.replace(/\.(dwg|dxf|pdf)$/i, "") || "drawing");
   const occupancy = occupancyOf(extract);
   const addresses = findAddresses(blob);
   const erfMatch = blob.match(/erf\s*[:#]?\s*[\w\s,-]{2,40}/i);
@@ -34,6 +34,11 @@ export function auditFromDrawing(
   if (extract.format === "dwg" && extract.geometry.length === 0) {
     warnings.push(
       "This DWG could not be converted. Plancheck read titles and notes only. Export DXF from CAD for a fuller preview and annotated drawing.",
+    );
+  }
+  if (extract.format === "pdf" && extract.strings.length < 8) {
+    warnings.push(
+      "This PDF has little readable text. Plot from CAD as a vector PDF so titles, notes, and schedules stay selectable. Scanned sheets cannot be checked yet.",
     );
   }
 

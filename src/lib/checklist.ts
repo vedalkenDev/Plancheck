@@ -40,12 +40,25 @@ export function auditToReport(audit: AuditSample): string {
     .concat("\n");
 }
 
-export function downloadBlob(filename: string, contents: string, mime: string) {
-  const blob = new Blob([contents], { type: mime });
+export function downloadBlob(
+  filename: string,
+  contents: string | Uint8Array | ArrayBuffer,
+  mime: string,
+) {
+  const blob = new Blob([asBlobPart(contents)], { type: mime });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
   link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+function asBlobPart(contents: string | Uint8Array | ArrayBuffer): BlobPart {
+  if (typeof contents === "string" || contents instanceof ArrayBuffer) {
+    return contents;
+  }
+  const copy = new ArrayBuffer(contents.byteLength);
+  new Uint8Array(copy).set(contents);
+  return copy;
 }

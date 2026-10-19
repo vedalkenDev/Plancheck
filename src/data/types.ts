@@ -36,7 +36,7 @@ export type AuditSample = {
   passed: PassedCheck[];
   failed: FailedCheck[];
   warnings?: string[];
-  format?: "dxf" | "dwg" | "unknown";
+  format?: "dxf" | "dwg" | "pdf" | "unknown";
 };
 
 export type SampleDrawing = {

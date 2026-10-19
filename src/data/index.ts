@@ -4,6 +4,11 @@ export type { AuditSample, FailedCheck, PassedCheck, SampleDrawing } from "./typ
 
 export const sampleDrawings: SampleDrawing[] = [
   {
+    id: "marine-drive-notes",
+    label: "69 Marine Drive (PDF notes)",
+    href: "/samples/marine-drive-notes.pdf",
+  },
+  {
     id: "marine-drive",
     label: "69 Marine Drive (H4 dwelling)",
     href: "/samples/marine-drive.dxf",
