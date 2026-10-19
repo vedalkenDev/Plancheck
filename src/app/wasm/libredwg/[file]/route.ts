@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
+import { flushPostHogLogs, logPostHogInfo } from "@/lib/posthog-logs";
 
 const FILES: Record<string, string> = {
   "libredwg-web.js": "text/javascript; charset=utf-8",
@@ -20,6 +21,8 @@ export async function GET(
   const bytes = await readFile(
     path.join(process.cwd(), "node_modules/@mlightcad/libredwg-web/wasm", file),
   );
+  logPostHogInfo("LibreDWG asset served", { asset_type: file });
+  after(flushPostHogLogs);
   return new NextResponse(bytes, {
     headers: {
       "Content-Type": contentType,

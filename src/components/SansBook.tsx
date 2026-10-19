@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import posthog from "posthog-js";
 import { Button } from "@/components/ui/button";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 
@@ -51,6 +52,7 @@ export function SansBook() {
     }));
     setHits(rows);
     setStatus(rows.length ? "" : "No heading matched.");
+    posthog.capture("sans_heading_searched", { result_count: rows.length });
   }
 
   async function openBook(hit: HeadingHit) {
@@ -66,6 +68,7 @@ export function SansBook() {
       return;
     }
     window.open(body.url, "_blank", "noopener,noreferrer");
+    posthog.capture("sans_book_opened", { part_letter: hit.part_letter });
   }
 
   return (

@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
+import { flushPostHogLogs, logPostHogInfo } from "@/lib/posthog-logs";
 import { getAllowedUser } from "@/lib/auth/session";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { hasSupabaseConfig } from "@/lib/supabase/env";
@@ -57,5 +58,10 @@ export async function GET(request: Request) {
   }
 
   const signedUrl = page ? `${data.signedUrl}#page=${page}` : data.signedUrl;
+  logPostHogInfo("SANS PDF link issued", {
+    part,
+    has_page: page !== null,
+  });
+  after(flushPostHogLogs);
   return NextResponse.json({ url: signedUrl });
 }

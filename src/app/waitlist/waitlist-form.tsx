@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useActionState } from "react";
+import posthog from "posthog-js";
 import { useFormStatus } from "react-dom";
 
 const initial: JoinWaitlistState = { error: null, success: null };
@@ -23,7 +24,11 @@ export function WaitlistForm({ email = "" }: WaitlistFormProps) {
   }
 
   return (
-    <form action={action} className="space-y-4">
+    <form
+      action={action}
+      className="space-y-4"
+      onSubmit={() => posthog.capture("waitlist_submitted")}
+    >
       <input
         type="text"
         name="website"

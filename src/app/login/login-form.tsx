@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useActionState } from "react";
+import posthog from "posthog-js";
 import { useFormStatus } from "react-dom";
 
 const initial: EnterEmailState = { error: null };
@@ -13,7 +14,11 @@ export function LoginForm() {
   const [state, action] = useActionState(enterEmail, initial);
 
   return (
-    <form action={action} className="space-y-4">
+    <form
+      action={action}
+      className="space-y-4"
+      onSubmit={() => posthog.capture("login_submitted")}
+    >
       <div className="space-y-1.5">
         <Label htmlFor="login-email">Email</Label>
         <Input

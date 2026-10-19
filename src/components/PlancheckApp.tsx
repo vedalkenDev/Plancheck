@@ -2,6 +2,7 @@
 
 import { FileUp, Loader2, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react";
+import posthog from "posthog-js";
 import { ChangeList, ReviewTitle } from "@/components/check-panels";
 import { DrawingPreview } from "@/components/DrawingPreview";
 import { ReviewDock } from "@/components/ReviewDock";
@@ -128,6 +129,7 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
       setExtract(drawing);
       setSourceText(nextText);
       setPdfBytes(nextPdf);
+      posthog.capture("drawing_inspected", { format: drawing.format });
     } catch {
       setError("The drawing could not be read. Plot a vector PDF from CAD, or export DWG / DXF, and try again.");
       setExtract(null);
@@ -167,6 +169,7 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
       setExtract(drawing);
       setSourceText(nextText);
       setPdfBytes(nextPdf);
+      posthog.capture("sample_drawing_loaded", { sample_id: sample.id, format: drawing.format });
     } catch {
       setError("The sample drawing could not be loaded.");
     } finally {
@@ -211,7 +214,14 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
           <span className="hidden max-w-56 truncate text-sm text-muted-foreground sm:inline">
             {userEmail}
           </span>
-          <form action="/auth/logout" method="post">
+          <form
+            action="/auth/logout"
+            method="post"
+            onSubmit={() => {
+              posthog.capture("user_logged_out");
+              posthog.reset();
+            }}
+          >
             <Button type="submit" variant="outline" size="sm">
               Sign out
             </Button>
@@ -248,6 +258,7 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
               onSheet={(index) => {
                 setSheetIndex(index);
                 resetChecks();
+                posthog.capture("drawing_sheet_selected", { sheet_index: index });
               }}
               done={done}
               setDone={setDone}
@@ -477,6 +488,7 @@ function NoteForm({
     const next = addVisibleText(extract, sourceText, draft);
     onChange(next);
     setDraft("");
+    posthog.capture("drawing_annotation_added");
   }
 
   return (
@@ -663,6 +675,7 @@ function Analysis({
       auditToReport(audit),
       "text/plain;charset=utf-8",
     );
+    posthog.capture("checklist_downloaded", { failed_checks: audit.failed.length });
   }
 
   async function downloadDrawing() {
@@ -673,6 +686,7 @@ function Analysis({
         annotated,
         "application/pdf",
       );
+      posthog.capture("annotated_drawing_downloaded", { format: "pdf" });
       return;
     }
     if (!extract) {
@@ -683,6 +697,7 @@ function Analysis({
       buildAnnotatedDrawing(audit, extract, sourceText ?? undefined),
       "application/dxf",
     );
+    posthog.capture("annotated_drawing_downloaded", { format: "dxf" });
   }
 
   return (

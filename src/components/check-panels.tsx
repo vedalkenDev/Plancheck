@@ -1,5 +1,6 @@
 import { CircleCheck, CircleX, ListChecks, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
+import posthog from "posthog-js";
 import { CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { FailedCheck, PassedCheck } from "@/data/types";
@@ -118,7 +119,11 @@ export function ChangeList({
         <li key={row.id} className="flex items-start gap-3 py-3">
           <Checkbox
             checked={Boolean(done[row.id])}
-            onCheckedChange={(value) => setDone({ ...done, [row.id]: value === true })}
+            onCheckedChange={(value) => {
+              const completed = value === true;
+              setDone({ ...done, [row.id]: completed });
+              posthog.capture("review_change_toggled", { completed });
+            }}
             aria-label={`Mark ${row.check} done`}
             className="mt-0.5"
           />

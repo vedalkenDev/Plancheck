@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Providers } from "@/components/providers";
+import { getAllowedUser } from "@/lib/auth/session";
 import { cn } from "@/lib/utils";
 import "./globals.css";
 
@@ -43,7 +44,9 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  const user = await getAllowedUser();
+
   return (
     <html
       lang="en"
@@ -54,7 +57,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <a className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2" href="#main">
           Skip to content
         </a>
-        <Providers>
+        <Providers userEmail={user?.email}>
           <div id="main">{children}</div>
         </Providers>
       </body>
