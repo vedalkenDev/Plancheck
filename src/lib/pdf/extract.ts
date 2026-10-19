@@ -6,8 +6,13 @@ import { extractTextItems, getDocumentProxy } from "unpdf";
  * percentages printed on the sheet — the same strings a CAD plot puts in a
  * vector PDF. Scanned sheets with no text still fail the readable-text check.
  */
-export async function extractPdf(filename: string, bytes: ArrayBuffer): Promise<DrawingExtract> {
-  const pdf = await getDocumentProxy(new Uint8Array(bytes));
+export async function extractPdf(
+  filename: string,
+  bytes: Uint8Array | ArrayBuffer,
+): Promise<DrawingExtract> {
+  const data = new Uint8Array(bytes.byteLength);
+  data.set(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
+  const pdf = await getDocumentProxy(data);
   const { totalPages, items } = await extractTextItems(pdf);
   const sheets: DrawingSheet[] = [];
   const texts: DrawingText[] = [];

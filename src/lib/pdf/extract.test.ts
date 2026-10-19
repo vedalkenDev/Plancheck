@@ -10,10 +10,7 @@ describe("pdf council set", () => {
   it("runs the Marine Drive checks from a plotted notes PDF and writes an editable stamp", async () => {
     const bytes = await marineDriveNotesPdf();
 
-    const extract = await extractPdf("marine-drive-notes.pdf", bytes.buffer.slice(
-      bytes.byteOffset,
-      bytes.byteOffset + bytes.byteLength,
-    ));
+    const extract = await extractPdf("marine-drive-notes.pdf", bytes);
     assert.equal(extract.format, "pdf");
     assert.ok(extract.strings.some((line) => /Occupancy H4 dwelling/i.test(line)));
 
@@ -47,10 +44,7 @@ describe("pdf council set", () => {
     const empty = await PDFDocument.create();
     empty.addPage();
     const bytes = await empty.save();
-    const extract = await extractPdf("blank.pdf", bytes.buffer.slice(
-      bytes.byteOffset,
-      bytes.byteOffset + bytes.byteLength,
-    ));
+    const extract = await extractPdf("blank.pdf", bytes);
     const audit = auditFromDrawing("blank.pdf", extract);
     assert.equal(audit.failed.some((row) => row.id === "readable-text"), true);
   });
