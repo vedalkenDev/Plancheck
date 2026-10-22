@@ -1,17 +1,17 @@
 "use client";
 
-import { FileUp, Loader2, X } from "lucide-react";
+import { FileUp, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { ChangeList, ReviewTitle } from "@/components/check-panels";
 import { DrawingPreview } from "@/components/DrawingPreview";
 import { ReviewDock } from "@/components/ReviewDock";
 import { SansBook } from "@/components/SansBook";
+import { ScanLoader } from "@/components/scanner/figure";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -197,7 +197,7 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
       </header>
 
       <div className="grid min-h-0 flex-1 lg:grid-cols-3">
-        <section className="flex min-h-[28rem] flex-col border-b p-4 lg:min-h-0 lg:overflow-hidden lg:border-r lg:border-b-0 lg:p-6">
+        <section className="flex min-h-[28rem] min-w-0 flex-col border-b p-4 lg:min-h-0 lg:overflow-hidden lg:border-r lg:border-b-0 lg:p-6">
           <input
             ref={inputRef}
             id={inputId}
@@ -222,6 +222,16 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
               setDone={setDone}
               onReplace={reset}
             />
+          ) : reading ? (
+            <div
+              className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-border bg-card p-4 text-muted-foreground"
+              aria-busy="true"
+            >
+              <div className="w-full lg:hidden">
+                <ScanLoader />
+              </div>
+              <p className="hidden text-sm lg:block">Inspecting drawing…</p>
+            </div>
           ) : (
             <label
               htmlFor={inputId}
@@ -232,20 +242,13 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
                 void onFile(event.dataTransfer.files[0]);
               }}
             >
-              {reading ? (
-                <div className="flex flex-1 flex-col items-center justify-center gap-3 text-muted-foreground">
-                  <Loader2 className="size-8 animate-spin" />
-                  <p className="text-sm">Inspecting drawing…</p>
-                </div>
-              ) : (
-                <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-                  <FileUp className="size-8 text-muted-foreground" />
-                  <p className="max-w-xs text-sm leading-relaxed">
-                    Drag a council PDF here. Click to inspect the drawing
-                    for council plan submission.
-                  </p>
-                </div>
-              )}
+              <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
+                <FileUp className="size-8 text-muted-foreground" />
+                <p className="max-w-xs text-sm leading-relaxed">
+                  Drag a council PDF here. Click to inspect the drawing
+                  for council plan submission.
+                </p>
+              </div>
             </label>
           )}
           {error ? (
@@ -273,7 +276,7 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
           </div>
         </section>
 
-        <section className="min-h-0 overflow-auto lg:col-span-2">
+        <section className="min-h-0 min-w-0 overflow-auto lg:col-span-2">
           <div className="space-y-6 p-4 md:p-6">
             <SansBook />
             {reading ? (
@@ -492,16 +495,9 @@ function EmptyState() {
 
 function InspectingState() {
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3 text-muted-foreground">
-        <Loader2 className="size-5 animate-spin" />
-        <p className="text-sm">Running SANS 10400 checks…</p>
-      </div>
-      <div className="grid gap-4 md:grid-cols-2">
-        <Skeleton className="h-64" />
-        <Skeleton className="h-64" />
-      </div>
-      <Skeleton className="h-40" />
+    <div className="hidden lg:block">
+      <p className="sr-only">Running SANS 10400 checks</p>
+      <ScanLoader />
     </div>
   );
 }
