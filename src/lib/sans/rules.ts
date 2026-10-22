@@ -1,5 +1,12 @@
 import type { FailedCheck, PassedCheck } from "@/data/types";
 import type { DrawingExtract } from "@/lib/cad/extract";
+import {
+  describeCut,
+  findWindowTypes,
+  readFenestration,
+  suggestGlazingCuts,
+  type StoreyFenestration,
+} from "@/lib/sans/fenestration";
 import { occupancyFromText } from "@/lib/sans/occupancy";
 
 const ADDRESS =
@@ -157,9 +164,12 @@ export const SANS_RULES: Rule[] = [
           types.length === 1
             ? types[0]
             : `${types[0]}–${types[types.length - 1]}`;
+        const measured = readFenestration(ctx.blob);
         return {
           status: "pass",
-          detail: `${span} with unit sizes drawn`,
+          detail: measured.measured
+            ? `${span}, ${measured.glazedM2.toFixed(2)} m² glazed measured`
+            : `${span} with unit sizes drawn`,
           evidence: quotes(ctx, /window schedule|W\d{1,2}/i),
         };
       }
@@ -419,38 +429,66 @@ export const SANS_RULES: Rule[] = [
 ];
 
 function xaFenestration(ctx: AuditContext): RuleResult {
-  const storeys = parseStoreyFenestration(ctx.blob);
+  const reading = readFenestration(ctx.blob);
+  const storeys = reading.storeys;
   const mentionsXa = /xa/i.test(ctx.blob);
   const mentions204 = /sans\s*204/i.test(ctx.blob);
   const usedTwenty =
     /under\s*20|below\s*20|less than\s*20/i.test(ctx.blob) &&
     /not required/i.test(ctx.blob);
-  const evidence = quotes(ctx, FENESTRATION).slice(0, 6);
-  const over = storeys.filter((row) => row.percent > 15);
+  const evidence = [
+    ...quotes(ctx, FENESTRATION),
+    ...reading.units.map((unit) => ({ quote: unit.quote })),
+  ].slice(0, 6);
+  const over = storeys.filter((row) => (effectivePercent(row) ?? 0) > 15);
+  const mismatched = storeys.filter(printedDisagrees);
 
   if (over.length) {
     if (mentions204 && !/not required/i.test(ctx.blob)) {
       return {
         status: "pass",
-        detail: `${over.map((row) => `${row.storey} ${row.percent}%`).join(", ")} — SANS 204 noted`,
+        detail: `${over.map((row) => `${row.storey} ${showPercent(row)}%`).join(", ")} — SANS 204 noted`,
         evidence,
       };
     }
-    const cuts = over.map((row) => describeCut(row)).filter(Boolean);
-    const listing = over
-      .map((row) => `${row.storey} ${row.percent}%`)
-      .join(" and ");
+    const cuts = over
+      .map((row) => suggestGlazingCuts(row, reading.units) || describeCut(row))
+      .filter(Boolean);
+    const listing = over.map((row) => `${row.storey} ${showPercent(row)}%`).join(" and ");
+    const measuredNote = reading.measured
+      ? mismatched.length
+        ? ` XA notes print ${printedList(mismatched)}; schedule measures ${measuredList(mismatched)}.`
+        : " Measured from the window schedule."
+      : "";
     return {
       status: "fail",
-      detail: `${listing} exceed 15%. SANS 204 required.`,
-      adjust: cuts.length
-        ? `Apply SANS 204, or cut about ${cuts.join(" and ")} of glazing to get each storey to 15% of nett floor. Do not treat “under 20%” as XA not required.`
-        : "Apply SANS 204, or reduce glazed area to 15% of nett floor per storey. Do not treat “under 20%” as XA not required.",
+      detail: `${listing} exceed 15%. SANS 204 required.${measuredNote}`,
+      adjust: xaAdjust(cuts, reading.measured, mismatched.length > 0),
       evidence,
     };
   }
 
-  if ((mentionsXa || /fenestr/i.test(ctx.blob)) && storeys.length === 0) {
+  if (mismatched.length) {
+    return {
+      status: "fail",
+      detail: `XA notes print ${printedList(mismatched)}; schedule measures ${measuredList(mismatched)}.`,
+      adjust:
+        "Correct the XA percentages on the sheet to the window-schedule measurement. Do not lodge a titleblock figure that disagrees with the schedule.",
+      evidence,
+    };
+  }
+
+  const hasPercent = storeys.some((row) => effectivePercent(row) !== undefined);
+  if ((mentionsXa || /fenestr/i.test(ctx.blob)) && !hasPercent) {
+    if (reading.measured) {
+      return {
+        status: "fail",
+        detail: `Window sizes measured (${reading.glazedM2.toFixed(2)} m² glazed) but nett floor per storey is missing`,
+        adjust:
+          "Add nett floor area per storey so Plancheck can finish XA 4.4.4 (glazed area ÷ nett floor). If a storey is over 15%, SANS 204 is required.",
+        evidence,
+      };
+    }
     return {
       status: "fail",
       detail: "Fenestration % missing",
@@ -460,7 +498,7 @@ function xaFenestration(ctx: AuditContext): RuleResult {
     };
   }
 
-  if (!mentionsXa && !/fenestr|glaz/i.test(ctx.blob)) {
+  if (!mentionsXa && !/fenestr|glaz/i.test(ctx.blob) && !reading.measured) {
     return {
       status: "fail",
       detail: "Not found on the drawing",
@@ -481,83 +519,50 @@ function xaFenestration(ctx: AuditContext): RuleResult {
 
   return {
     status: "pass",
-    detail: storeys.length
-      ? storeys.map((row) => `${row.storey} ${row.percent}%`).join(", ")
+    detail: hasPercent
+      ? `${storeys
+          .filter((row) => effectivePercent(row) !== undefined)
+          .map((row) => `${row.storey} ${showPercent(row)}%`)
+          .join(", ")}${reading.measured ? " measured from the window schedule" : ""}`
       : "Noted on the drawing (≤15% path)",
     evidence,
   };
 }
 
-type StoreyFen = {
-  storey: string;
-  percent: number;
-  floorM2?: number;
-};
-
-function parseStoreyFenestration(blob: string): StoreyFen[] {
-  const found: StoreyFen[] = [];
-  for (const match of blob.matchAll(
-    /(L\/G|Lower\s*ground|Ground|First|Second|LG)\D{0,28}(\d+(?:\.\d+)?)\s*%/gi,
-  )) {
-    found.push({
-      storey: normalizeStorey(match[1]),
-      percent: Number.parseFloat(match[2]),
-    });
-  }
-
-  for (const row of found) {
-    const floor = matchFloor(blob, row.storey);
-    if (floor) {
-      row.floorM2 = floor;
-    }
-  }
-
-  return found;
+function effectivePercent(row: StoreyFenestration) {
+  return row.measuredPercent ?? row.printedPercent;
 }
 
-function matchFloor(blob: string, storey: string) {
-  const aliases =
-    storey === "L/G"
-      ? "L\\/G|Lower\\s*ground|LG"
-      : storey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = blob.match(
-    new RegExp(`(?:${aliases})[^\\n]{0,48}?(\\d+(?:\\.\\d+)?)\\s*m`, "i"),
-  );
-  if (!match) {
-    return undefined;
+function printedDisagrees(row: StoreyFenestration) {
+  if (row.measuredPercent === undefined || row.printedPercent === undefined) {
+    return false;
   }
-  const value = Number.parseFloat(match[1]);
-  return Number.isFinite(value) ? value : undefined;
+  return Math.abs(row.measuredPercent - row.printedPercent) > 0.4;
 }
 
-function describeCut(row: StoreyFen) {
-  if (!row.floorM2 || row.percent <= 15) {
-    return "";
-  }
-  const cut = ((row.percent - 15) / 100) * row.floorM2;
-  return `${cut.toFixed(2)} m² (${row.storey})`;
+function showPercent(row: StoreyFenestration) {
+  const value = effectivePercent(row);
+  return value === undefined ? "" : String(value);
 }
 
-function normalizeStorey(value: string) {
-  const text = value.replace(/\s+/g, " ").trim().toLowerCase();
-  if (text === "lg" || text.startsWith("lower")) {
-    return "L/G";
-  }
-  if (text === "l/g") {
-    return "L/G";
-  }
-  return value.replace(/\s+/g, " ").replace(/^./, (char) => char.toUpperCase());
+function printedList(rows: StoreyFenestration[]) {
+  return rows.map((row) => `${row.storey} ${row.printedPercent}%`).join(" / ");
 }
 
-function findWindowTypes(blob: string) {
-  const found: string[] = [];
-  for (const match of blob.matchAll(/\bW(\d{1,2})\b/g)) {
-    const label = `W${match[1]}`;
-    if (!found.includes(label)) {
-      found.push(label);
-    }
-  }
-  return found;
+function measuredList(rows: StoreyFenestration[]) {
+  return rows.map((row) => `${row.storey} ${row.measuredPercent}%`).join(" / ");
+}
+
+function xaAdjust(cuts: string[], measured: boolean, mismatched: boolean) {
+  const action = cuts.length
+    ? `Apply SANS 204, or ${measured && cuts.some((cut) => cut.includes("×")) ? `remove ${cuts.join(" and ")}` : `cut about ${cuts.join(" and ")} of glazing`} to get each storey to 15% of nett floor.`
+    : "Apply SANS 204, or reduce glazed area to 15% of nett floor per storey.";
+  const extra = mismatched
+    ? " Correct the XA notes to the measured percentages."
+    : measured
+      ? ""
+      : " These percentages were read from the XA notes. Put overall width × height on each window type so Plancheck can measure glazed area.";
+  return `${action} Do not treat “under 20%” as XA not required.${extra}`;
 }
 
 export function evaluateRules(ctx: AuditContext) {

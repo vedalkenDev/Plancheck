@@ -1,5 +1,6 @@
 import type { AuditSample } from "@/data/types";
 import type { DrawingExtract } from "@/lib/cad/extract";
+import { readFenestration } from "@/lib/sans/fenestration";
 import {
   evaluateRules,
   findAddresses,
@@ -39,6 +40,15 @@ export function auditFromDrawing(
   if (extract.format === "pdf" && extract.strings.length < 5) {
     warnings.push(
       "This PDF has little readable text. Plot from CAD as a vector PDF so titles, notes, and schedules stay selectable. Scanned sheets cannot be checked yet.",
+    );
+  }
+  const fenestration = readFenestration(blob);
+  if (
+    !fenestration.measured &&
+    fenestration.storeys.some((row) => row.printedPercent !== undefined)
+  ) {
+    warnings.push(
+      "XA percentages were read from the notes, not measured from window sizes. Add overall width × height on the window schedule to check the titleblock figure.",
     );
   }
 
