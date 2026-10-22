@@ -111,10 +111,11 @@ describe("stampAudit", () => {
       height: 700,
     };
     const stamped = stampAudit(drawing, audit);
-    const notes = stamped.geometry.filter(
-      (entity) =>
-        entity.kind === "text" &&
-        (entity.layer === "COUNCIL_CHECK" || entity.layer === "COUNCIL_FIXES"),
+    const notes = stamped.geometry.flatMap((entity) =>
+      entity.kind === "text" &&
+      (entity.layer === "COUNCIL_CHECK" || entity.layer === "COUNCIL_FIXES")
+        ? [entity]
+        : [],
     );
     assert.ok(notes.length >= 1);
     for (const note of notes) {
