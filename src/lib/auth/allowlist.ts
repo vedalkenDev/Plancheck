@@ -2,6 +2,9 @@ const DEFAULT_ALLOWED = [
   "vedalken.dev@gmail.com",
   "uwaism0502@gmail.com",
   "zunaed@boogertmandbn.co.za",
+  "zunaed.ballim@gmail.com",
+  "mssd1812@gmail.com",
+  "mssarch@wol.co.za",
 ];
 
 export function allowedEmails() {
