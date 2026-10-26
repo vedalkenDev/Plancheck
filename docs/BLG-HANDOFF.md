@@ -80,4 +80,5 @@ Correct the engine if it diverges from these.
 | Annotated **PDF** out | Yes | — |
 | Measure glazed area from window schedule sizes | Yes | Pane-by-pane CAD / anonymous PDF strokes |
 | Measure stair riser and going from notes | Yes | Geometry |
+| Measure pane elevations from schedule notes (overall + each pane) | Yes | Pane-by-pane CAD geometry |
 | True window pane dimensions from geometry | Not yet | Better with CAD geometry |

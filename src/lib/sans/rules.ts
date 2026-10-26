@@ -2,13 +2,17 @@ import type { FailedCheck, PassedCheck } from "@/data/types";
 import type { DrawingExtract } from "@/lib/cad/extract";
 import {
   describeCut,
-  findWindowTypes,
   readFenestration,
   suggestGlazingCuts,
   type StoreyFenestration,
 } from "@/lib/sans/fenestration";
 import { occupancyFromText } from "@/lib/sans/occupancy";
 import { MAX_RISER_MM, MIN_GOING_MM, readStairs } from "@/lib/sans/stairs";
+import {
+  describePanes,
+  readWindowSchedule,
+  typeSpan,
+} from "@/lib/sans/windows";
 
 const ADDRESS =
   /\b(\d{1,5})\s+([A-Za-z][A-Za-z]+(?:\s+[A-Za-z][A-Za-z]+){0,3}\s+(?:Road|Rd|Drive|Dr|Street|St|Avenue|Ave|Lane|Ln|Way|Crescent|Close))\b/gi;
@@ -155,42 +159,7 @@ export const SANS_RULES: Rule[] = [
     id: "window-schedule",
     part: "N",
     check: "Window schedule",
-    run: (ctx) => {
-      const types = findWindowTypes(ctx.blob);
-      const hasSchedule = /window schedule/i.test(ctx.blob) || types.length > 0;
-      const hasWindows = /window|fenestr|glaz/i.test(ctx.blob);
-
-      if (hasSchedule && types.length) {
-        const span =
-          types.length === 1
-            ? types[0]
-            : `${types[0]}–${types[types.length - 1]}`;
-        const measured = readFenestration(ctx.blob);
-        return {
-          status: "pass",
-          detail: measured.measured
-            ? `${span}, ${measured.glazedM2.toFixed(2)} m² glazed measured`
-            : `${span} with unit sizes drawn`,
-          evidence: quotes(ctx, /window schedule|W\d{1,2}/i),
-        };
-      }
-      if (hasSchedule) {
-        return {
-          status: "pass",
-          detail: "Present",
-          evidence: quotes(ctx, /window schedule/i),
-        };
-      }
-      if (!hasWindows) {
-        return { status: "skip" };
-      }
-      return {
-        status: "fail",
-        detail: "Window types and pane sizes not found",
-        adjust:
-          "Add a window schedule with type elevations — overall size and each pane — in free space on the sheet.",
-      };
-    },
+    run: (ctx) => partNWindows(ctx),
   },
   {
     id: "part-r",
@@ -412,6 +381,70 @@ export const SANS_RULES: Rule[] = [
     },
   },
 ];
+
+function partNWindows(ctx: AuditContext): RuleResult {
+  const reading = readWindowSchedule(ctx.blob);
+  const hasWindows = /window|fenestr|glaz/i.test(ctx.blob);
+  const evidence = quotes(
+    ctx,
+    /window schedule|W\d{1,2}|panes?|sashes?|fixed|openable|casement/i,
+  );
+
+  if (reading.overall.length && reading.panes.length && !reading.missingPaneTypes.length) {
+    return {
+      status: "pass",
+      detail: describePanes(reading),
+      evidence,
+    };
+  }
+
+  if (reading.overall.length && reading.missingPaneTypes.length) {
+    const span = typeSpan(reading.missingPaneTypes);
+    return {
+      status: "fail",
+      detail: `${span} overall sizes drawn, pane elevations missing`,
+      adjust: `Add each pane width × height on the ${span} type elevation — overall size and every pane (fixed, openable, casement) in free space on the sheet.`,
+      evidence,
+    };
+  }
+
+  if (reading.panes.length && !reading.overall.length) {
+    return {
+      status: "fail",
+      detail: "Pane sizes found, overall type sizes missing",
+      adjust:
+        "Add the overall width × height on each window type elevation, next to the pane sizes.",
+      evidence,
+    };
+  }
+
+  if (reading.hasSchedule && reading.types.length) {
+    return {
+      status: "pass",
+      detail: `${typeSpan(reading.types)} with unit sizes drawn`,
+      evidence: quotes(ctx, /window schedule|W\d{1,2}/i),
+    };
+  }
+
+  if (reading.hasSchedule) {
+    return {
+      status: "pass",
+      detail: "Present",
+      evidence: quotes(ctx, /window schedule/i),
+    };
+  }
+
+  if (!hasWindows) {
+    return { status: "skip" };
+  }
+
+  return {
+    status: "fail",
+    detail: "Window types and pane sizes not found",
+    adjust:
+      "Add a window schedule with type elevations — overall size and each pane — in free space on the sheet.",
+  };
+}
 
 function partMStairs(ctx: AuditContext): RuleResult {
   const stairs = readStairs(ctx.blob);
