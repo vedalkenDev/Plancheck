@@ -6,7 +6,7 @@ import { auditFromDrawing } from "../cad/audit-from-drawing";
 import { extractDrawing } from "../cad/extract";
 import { geometryBounds } from "../cad/preview";
 import { extractPdf } from "./extract";
-import { marineDriveGlyphPdf, marineDriveNotesPdf } from "./fixture";
+import { marineDriveGlyphPdf, marineDriveNotesPdf, measuredWindowNotesPdf } from "./fixture";
 import { plotDrawingPdf } from "./plot";
 import { stampPdf } from "./stamp";
 import { reconstructPdfLines } from "./text";
@@ -157,6 +157,23 @@ describe("pdf council set", () => {
     const audit = auditFromDrawing("marine-drive-plot.pdf", pdf);
     assert.equal(audit.occupancy, "H4");
     assert.match(audit.address, /69 Marine Drive/);
+  });
+
+  it("measures glazed area from a plotted window schedule instead of trusting the XA notes", async () => {
+    const bytes = await measuredWindowNotesPdf();
+    const extract = await extractPdf("measured-windows.pdf", bytes);
+    assert.ok(extract.strings.some((line) => /L\/G W1 2000 x 1500 x6/i.test(line)));
+
+    const audit = auditFromDrawing("measured-windows.pdf", extract);
+    const xa = audit.failed.find((row) => row.id === "xa-fenestration");
+    assert.ok(xa);
+    assert.match(xa.detail, /18%/);
+    assert.match(xa.detail, /24%/);
+    assert.match(xa.detail, /schedule measures/);
+    assert.match(xa.adjust, /1 × W1/);
+    assert.match(xa.adjust, /3 × W2/);
+    const windows = audit.passed.find((row) => row.id === "window-schedule");
+    assert.match(windows?.detail ?? "", /42\.00 m² glazed measured/);
   });
 
   it("fails readable text when the PDF has no notes", async () => {

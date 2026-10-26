@@ -76,4 +76,5 @@ Correct the engine if it diverges from these.
 | Read council PDF notes + wall paths | Yes | Scanned sheets |
 | Pack failed checks into empty paper | Yes | — |
 | Annotated **PDF** out | Yes | — |
+| Measure glazed area from window schedule sizes | Yes | Pane-by-pane CAD / anonymous PDF strokes |
 | True window pane dimensions from geometry | Not yet | Better with CAD geometry |

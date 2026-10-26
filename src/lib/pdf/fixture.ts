@@ -31,6 +31,23 @@ export async function marineDriveGlyphPdf() {
   return notesPdf(MARINE_DRIVE_NOTES, true);
 }
 
+/** Printed XA % disagrees with window sizes — Plancheck should trust the schedule. */
+export const MEASURED_WINDOW_NOTES = [
+  "Proposed dwelling",
+  "12 Test Road",
+  "Occupancy H4 dwelling",
+  "Fenestration L/G 10% Ground 10%",
+  "L/G nett floor 100 m2",
+  "Ground nett floor 100 m2",
+  "Window schedule",
+  "L/G W1 2000 x 1500 x6",
+  "Ground W2 2000 x 1500 x8",
+];
+
+export async function measuredWindowNotesPdf() {
+  return notesPdf(MEASURED_WINDOW_NOTES, false);
+}
+
 async function notesPdf(notes: string[], splitGlyphs: boolean) {
   const pdf = await PDFDocument.create();
   const page = pdf.addPage([842, 595]);
