@@ -2,6 +2,8 @@
 
 Durable context from Knight (BLG Grok) via Muhammed, plus the Marine Drive and Hartley ground-truth audits. Future runs should read this before changing the engine or UX.
 
+This week’s work: [`WEEK-PLAN.md`](WEEK-PLAN.md) (26 Oct – 1 Nov 2026, Africa/Johannesburg).
+
 This is a **pre-submission audit**. It is not a stamp, not municipal approval, and not a competent-person substitute.
 
 ## Product
