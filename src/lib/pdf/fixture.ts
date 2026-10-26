@@ -23,12 +23,22 @@ export const MARINE_DRIVE_NOTES = [
 ];
 
 export async function marineDriveNotesPdf() {
-  return notesPdf(MARINE_DRIVE_NOTES, false);
+  return notesPages([MARINE_DRIVE_NOTES], false);
+}
+
+/** Same notes split across two sheets — occupancy on 1, schedule and XA on 2. */
+export const MARINE_DRIVE_SET_PAGES = [
+  MARINE_DRIVE_NOTES.slice(0, 7),
+  MARINE_DRIVE_NOTES.slice(7),
+];
+
+export async function marineDriveSetPdf() {
+  return notesPages(MARINE_DRIVE_SET_PAGES, false);
 }
 
 /** Same notes, one glyph per Tj — how many CAD SHX/plot drivers write a sheet. */
 export async function marineDriveGlyphPdf() {
-  return notesPdf(MARINE_DRIVE_NOTES, true);
+  return notesPages([MARINE_DRIVE_NOTES], true);
 }
 
 /** Printed XA % disagrees with window sizes — Plancheck should trust the schedule. */
@@ -45,7 +55,7 @@ export const MEASURED_WINDOW_NOTES = [
 ];
 
 export async function measuredWindowNotesPdf() {
-  return notesPdf(MEASURED_WINDOW_NOTES, false);
+  return notesPages([MEASURED_WINDOW_NOTES], false);
 }
 
 /** Overall sizes plus each pane — Part N can pass from the notes. */
@@ -65,35 +75,37 @@ export const WINDOW_PANE_NOTES = [
 ];
 
 export async function windowPaneNotesPdf() {
-  return notesPdf(WINDOW_PANE_NOTES, false);
+  return notesPages([WINDOW_PANE_NOTES], false);
 }
 
-async function notesPdf(notes: string[], splitGlyphs: boolean) {
+async function notesPages(pages: string[][], splitGlyphs: boolean) {
   const pdf = await PDFDocument.create();
-  const page = pdf.addPage([842, 595]);
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const ink = rgb(0.12, 0.11, 0.1);
-  page.drawText("PLAN", { x: 48, y: 555, size: 18, font, color: ink });
-  page.drawRectangle({
-    x: 520,
-    y: 80,
-    width: 260,
-    height: 420,
-    borderWidth: 1,
-    borderColor: ink,
-  });
-  let y = 520;
-  for (const line of notes) {
-    if (splitGlyphs) {
-      let x = 48;
-      for (const ch of line) {
-        page.drawText(ch, { x, y, size: 11, font, color: ink });
-        x += font.widthOfTextAtSize(ch, 11);
+  for (const notes of pages) {
+    const page = pdf.addPage([842, 595]);
+    page.drawText("PLAN", { x: 48, y: 555, size: 18, font, color: ink });
+    page.drawRectangle({
+      x: 520,
+      y: 80,
+      width: 260,
+      height: 420,
+      borderWidth: 1,
+      borderColor: ink,
+    });
+    let y = 520;
+    for (const line of notes) {
+      if (splitGlyphs) {
+        let x = 48;
+        for (const ch of line) {
+          page.drawText(ch, { x, y, size: 11, font, color: ink });
+          x += font.widthOfTextAtSize(ch, 11);
+        }
+      } else {
+        page.drawText(line, { x: 48, y, size: 11, font, color: ink });
       }
-    } else {
-      page.drawText(line, { x: 48, y, size: 11, font, color: ink });
+      y -= 20;
     }
-    y -= 20;
   }
   return pdf.save();
 }

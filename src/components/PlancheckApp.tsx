@@ -140,8 +140,15 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
     }
   }
 
-  const viewed = useMemo(() => {
+  const audit = useMemo(() => {
     if (!extract) {
+      return null;
+    }
+    return auditFromDrawing(drawingName, extract);
+  }, [extract, drawingName]);
+
+  const viewed = useMemo(() => {
+    if (!extract || !audit) {
       return null;
     }
     const sheets = extract.sheets.length
@@ -158,18 +165,14 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
         ];
     const index = Math.min(sheetIndex, sheets.length - 1);
     const sheet = sheets[index];
-    const base: DrawingExtract = {
+    const preview: DrawingExtract = {
       ...extract,
       geometry: sheet.geometry,
-      texts: sheet.texts,
-      strings: sheet.strings,
-      sheets,
       pageWidth: sheet.width ?? extract.pageWidth,
       pageHeight: sheet.height ?? extract.pageHeight,
     };
-    const result = auditFromDrawing(drawingName, base);
-    return { extract: stampAudit(base, result), audit: result, sheets, index };
-  }, [extract, sheetIndex, drawingName]);
+    return { extract: stampAudit(preview, audit), audit, sheets, index };
+  }, [extract, audit, sheetIndex]);
 
   return (
     <div className="flex min-h-svh flex-col bg-background lg:h-svh lg:overflow-hidden">
@@ -216,7 +219,6 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
               sheetIndex={viewed.index}
               onSheet={(index) => {
                 setSheetIndex(index);
-                resetChecks();
               }}
               done={done}
               setDone={setDone}
@@ -337,7 +339,7 @@ function DrawingPane({
         <SheetTabs sheets={sheets} sheetIndex={sheetIndex} onSheet={onSheet} />
         <div className="min-h-0 flex-1 overflow-hidden rounded-lg border">
           {pdfBytes && !drawn ? (
-            <PdfPreview bytes={pdfBytes} label={label} />
+            <PdfPreview bytes={pdfBytes} label={label} page={sheetIndex + 1} />
           ) : (
             <DrawingPreview
               extract={extract}
@@ -502,7 +504,15 @@ function InspectingState() {
   );
 }
 
-function PdfPreview({ bytes, label }: { bytes: ArrayBuffer; label: string }) {
+function PdfPreview({
+  bytes,
+  label,
+  page,
+}: {
+  bytes: ArrayBuffer;
+  label: string;
+  page: number;
+}) {
   const url = useMemo(() => {
     const blob = new Blob([bytes], { type: "application/pdf" });
     return URL.createObjectURL(blob);
@@ -512,8 +522,9 @@ function PdfPreview({ bytes, label }: { bytes: ArrayBuffer; label: string }) {
 
   return (
     <iframe
+      key={`${url}-${page}`}
       title={label}
-      src={url}
+      src={`${url}#page=${page}`}
       className="h-full min-h-[22rem] w-full bg-background"
     />
   );

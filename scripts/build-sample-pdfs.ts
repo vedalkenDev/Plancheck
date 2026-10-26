@@ -20,8 +20,8 @@ async function plot(src: string, dest: string, name: string) {
 }
 
 async function main() {
-  await plot("public/samples/marine-drive.dxf", "public/samples/marine-drive.pdf", "marine-drive.dxf");
-  await plot("public/samples/hartley-test2.dxf", "public/samples/hartley-test2.pdf", "hartley-test2.dxf");
+  await plot("fixtures/cad/marine-drive.dxf", "public/samples/marine-drive.pdf", "marine-drive.dxf");
+  await plot("fixtures/cad/hartley-test2.dxf", "public/samples/hartley-test2.pdf", "hartley-test2.dxf");
   await plot("/tmp/drawings/woodshed-plan.dxf", "public/samples/woodshed-plan.pdf", "woodshed-plan.dxf");
 }
 

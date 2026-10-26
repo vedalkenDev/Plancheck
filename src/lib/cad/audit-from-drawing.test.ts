@@ -38,7 +38,7 @@ describe("occupancy from drawing", () => {
 
 describe("marine-drive fixture", () => {
   const { extract, audit, text } = load(
-    "public/samples/marine-drive.dxf",
+    "fixtures/cad/marine-drive.dxf",
     "marine-drive.dxf",
   );
 
@@ -129,7 +129,7 @@ describe("marine-drive fixture", () => {
 
 describe("hartley-test2 fixture", () => {
   const { audit } = load(
-    "public/samples/hartley-test2.dxf",
+    "fixtures/cad/hartley-test2.dxf",
     "hartley-test2.dxf",
   );
 
