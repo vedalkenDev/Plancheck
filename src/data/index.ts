@@ -9,6 +9,11 @@ export const sampleDrawings: SampleDrawing[] = [
     href: "/samples/marine-drive-notes.pdf",
   },
   {
+    id: "marine-drive-set",
+    label: "69 Marine Drive (2 sheets)",
+    href: "/samples/marine-drive-set.pdf",
+  },
+  {
     id: "window-panes-notes",
     label: "Window panes (notes)",
     href: "/samples/window-panes-notes.pdf",

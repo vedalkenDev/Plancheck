@@ -875,7 +875,7 @@ EOF
 
 describe("sheet style sample", () => {
   it("contains a dashed beam, a hatched slab, and a leader", () => {
-    const bytes = readFileSync("public/samples/sheet-styles.dxf");
+    const bytes = readFileSync("fixtures/cad/sheet-styles.dxf");
     const copy = new ArrayBuffer(bytes.byteLength);
     new Uint8Array(copy).set(bytes);
     const extract = extractDrawing("sheet-styles.dxf", copy);
@@ -1154,7 +1154,7 @@ EOF
 
 describe("sample drawings", () => {
   it("still frames the marine drive site", () => {
-    const bytes = readFileSync("public/samples/marine-drive.dxf");
+    const bytes = readFileSync("fixtures/cad/marine-drive.dxf");
     const copy = new ArrayBuffer(bytes.byteLength);
     new Uint8Array(copy).set(bytes);
     const extract = extractDrawing("marine-drive.dxf", copy);

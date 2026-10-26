@@ -29,7 +29,7 @@ PDF (vector plot from CAD)
 
 Annotation layers (preview, not UI jargon): `COUNCIL_CHECK`, `WIN_SCHED`, `COUNCIL_FIXES`, `WINDOW_DIMS`.
 
-**This browser MVP** imports PDF and exports PDF. CAD parsers remain as fixtures for tests. Do not put failed-check cards on the floor plan.
+**This browser MVP** imports PDF and exports PDF. A council set is the whole PDF: every sheet’s notes are audited together; sheet tabs only change the preview. CAD parsers remain as fixtures for tests under `fixtures/cad`, not in the sample list. Do not put failed-check cards on the floor plan.
 
 ## SANS drawing rules (index, not the book)
 

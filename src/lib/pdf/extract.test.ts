@@ -9,6 +9,7 @@ import { extractPdf } from "./extract";
 import {
   marineDriveGlyphPdf,
   marineDriveNotesPdf,
+  marineDriveSetPdf,
   measuredWindowNotesPdf,
   windowPaneNotesPdf,
 } from "./fixture";
@@ -154,7 +155,7 @@ describe("pdf council set", () => {
   });
 
   it("plots a DXF and still recovers occupancy after a glyph-split plot", async () => {
-    const dxf = readFileSync("public/samples/marine-drive.dxf");
+    const dxf = readFileSync("fixtures/cad/marine-drive.dxf");
     const extract = extractDrawing(
       "marine-drive.dxf",
       dxf.buffer.slice(dxf.byteOffset, dxf.byteOffset + dxf.byteLength),
@@ -190,6 +191,51 @@ describe("pdf council set", () => {
     const windows = audit.passed.find((row) => row.id === "window-schedule");
     assert.match(windows?.detail ?? "", /W1 600 × 1200 mm/);
     assert.match(windows?.detail ?? "", /W2 600 × 1500 mm/);
+  });
+
+  it("audits a two-page council set from every sheet, not only the open page", async () => {
+    const bytes = await marineDriveSetPdf();
+    const extract = await extractPdf("marine-drive-set.pdf", bytes);
+    assert.equal(extract.sheets.length, 2);
+    assert.ok(extract.sheets[0].strings.some((line) => /Occupancy H4 dwelling/i.test(line)));
+    assert.equal(
+      extract.sheets[0].strings.some((line) => /Window schedule/i.test(line)),
+      false,
+    );
+    assert.ok(extract.sheets[1].strings.some((line) => /Window schedule/i.test(line)));
+    assert.equal(
+      extract.sheets[1].strings.some((line) => /Occupancy H4 dwelling/i.test(line)),
+      false,
+    );
+
+    const fromOpenSheet = auditFromDrawing("marine-drive-set.pdf", {
+      ...extract,
+      texts: extract.sheets[0].texts,
+      strings: extract.sheets[0].strings,
+    });
+    assert.equal(fromOpenSheet.occupancy, "H4");
+    assert.equal(
+      fromOpenSheet.passed.some((row) => row.id === "window-schedule"),
+      false,
+    );
+    assert.equal(
+      fromOpenSheet.passed.some((row) => row.id === "part-m"),
+      false,
+    );
+
+    const audit = auditFromDrawing("marine-drive-set.pdf", extract);
+    assert.equal(audit.occupancy, "H4");
+    assert.match(audit.address, /69 Marine Drive/);
+    assert.ok(audit.passed.some((row) => row.id === "window-schedule"));
+    const stairs = audit.passed.find((row) => row.id === "part-m");
+    assert.equal(stairs?.detail, "170 mm riser, 250 mm going");
+    const xa = audit.failed.find((row) => row.id === "xa-fenestration");
+    assert.ok(xa);
+    assert.match(xa.detail, /16\.9%/);
+
+    const stamped = await stampPdf(bytes, audit, extract);
+    const annotated = await PDFDocument.load(stamped);
+    assert.ok(annotated.getPageCount() >= 2);
   });
 
   it("fails readable text when the PDF has no notes", async () => {
