@@ -47,7 +47,7 @@
       "check": "Stairs",
       "detail": "Stair dims missing",
       "status": "fail",
-      "adjust": "Dimension stairs to Part M on the drawings."
+      "adjust": "Dimension the stair riser and going in millimetres on the drawings (riser ≤ 200 mm, going ≥ 250 mm)."
     },
     {
       "id": "signatures",

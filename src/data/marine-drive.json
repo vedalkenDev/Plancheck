@@ -12,7 +12,7 @@
   "passed": [
     { "id": "coverage", "part": "Zoning", "check": "Coverage", "detail": "Under limit", "status": "pass" },
     { "id": "parking", "part": "Zoning", "check": "Parking", "detail": "6 / 6", "status": "pass" },
-    { "id": "part-m", "part": "M", "check": "Stairs", "detail": "Part M dimensions noted", "status": "pass" },
+    { "id": "part-m", "part": "M", "check": "Stairs", "detail": "170 mm riser, 250 mm going", "status": "pass" },
     { "id": "part-r", "part": "R", "check": "Stormwater", "detail": "Soakpit / stormwater noted", "status": "pass" },
     { "id": "part-o", "part": "O", "check": "Lighting", "detail": "W/m² noted", "status": "pass" },
     { "id": "window-schedule", "part": "N", "check": "Window schedule", "detail": "W1–W19 with unit sizes drawn", "status": "pass" }

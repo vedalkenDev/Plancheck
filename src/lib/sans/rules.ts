@@ -8,6 +8,7 @@ import {
   type StoreyFenestration,
 } from "@/lib/sans/fenestration";
 import { occupancyFromText } from "@/lib/sans/occupancy";
+import { MAX_RISER_MM, MIN_GOING_MM, readStairs } from "@/lib/sans/stairs";
 
 const ADDRESS =
   /\b(\d{1,5})\s+([A-Za-z][A-Za-z]+(?:\s+[A-Za-z][A-Za-z]+){0,3}\s+(?:Road|Rd|Drive|Dr|Street|St|Avenue|Ave|Lane|Ln|Way|Crescent|Close))\b/gi;
@@ -214,23 +215,7 @@ export const SANS_RULES: Rule[] = [
     id: "part-m",
     part: "M",
     check: "Stairs",
-    run: (ctx) => {
-      const hasStair = /stair/i.test(ctx.blob);
-      const hasDims = /\b\d+(\.\d+)?\s*(mm|m)\b/i.test(ctx.blob) && hasStair;
-      if (hasStair && hasDims) {
-        return {
-          status: "pass",
-          detail: "Part M dimensions noted",
-          evidence: quotes(ctx, /stair/i),
-        };
-      }
-      return {
-        status: "fail",
-        detail: hasStair ? "Stair dims missing" : "Stair dimensions not found",
-        adjust: "Dimension stairs to Part M on the drawings.",
-        evidence: hasStair ? quotes(ctx, /stair/i) : undefined,
-      };
-    },
+    run: (ctx) => partMStairs(ctx),
   },
   {
     id: "part-d",
@@ -427,6 +412,58 @@ export const SANS_RULES: Rule[] = [
     },
   },
 ];
+
+function partMStairs(ctx: AuditContext): RuleResult {
+  const stairs = readStairs(ctx.blob);
+  const hasStair = /stair/i.test(ctx.blob);
+  const evidence = quotes(ctx, /stair|riser|going|tread/i);
+
+  if (stairs.riserMm !== undefined && stairs.goingMm !== undefined) {
+    const detail = `${stairs.riserMm} mm riser, ${stairs.goingMm} mm going`;
+    const cuts: string[] = [];
+    if (stairs.riserMm > MAX_RISER_MM) {
+      cuts.push(`reduce the riser from ${stairs.riserMm} mm to ${MAX_RISER_MM} mm`);
+    }
+    if (stairs.goingMm < MIN_GOING_MM) {
+      cuts.push(
+        `increase the going from ${stairs.goingMm} mm to ${MIN_GOING_MM} mm`,
+      );
+    }
+    if (!cuts.length) {
+      return { status: "pass", detail, evidence };
+    }
+    return {
+      status: "fail",
+      detail: `${detail} outside Part M (${MAX_RISER_MM} mm max riser, ${MIN_GOING_MM} mm min going)`,
+      adjust: `Change the stair: ${cuts.join(" and ")}.`,
+      evidence,
+    };
+  }
+
+  if (hasStair || stairs.riserMm !== undefined || stairs.goingMm !== undefined) {
+    const missing = [
+      stairs.riserMm === undefined ? "riser" : null,
+      stairs.goingMm === undefined ? "going" : null,
+    ]
+      .filter((item): item is string => item !== null)
+      .join(" and ");
+    return {
+      status: "fail",
+      detail:
+        stairs.riserMm === undefined && stairs.goingMm === undefined
+          ? "Stair dims missing"
+          : `${missing} missing`,
+      adjust: `Dimension the stair ${missing} in millimetres on the drawings (riser ≤ ${MAX_RISER_MM} mm, going ≥ ${MIN_GOING_MM} mm).`,
+      evidence,
+    };
+  }
+
+  return {
+    status: "fail",
+    detail: "Stair dimensions not found",
+    adjust: `Dimension stairs to Part M on the drawings: riser ≤ ${MAX_RISER_MM} mm and going ≥ ${MIN_GOING_MM} mm.`,
+  };
+}
 
 function xaFenestration(ctx: AuditContext): RuleResult {
   const reading = readFenestration(ctx.blob);
