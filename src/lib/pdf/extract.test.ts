@@ -6,7 +6,12 @@ import { auditFromDrawing } from "../cad/audit-from-drawing";
 import { extractDrawing } from "../cad/extract";
 import { geometryBounds } from "../cad/preview";
 import { extractPdf } from "./extract";
-import { marineDriveGlyphPdf, marineDriveNotesPdf, measuredWindowNotesPdf } from "./fixture";
+import {
+  marineDriveGlyphPdf,
+  marineDriveNotesPdf,
+  measuredWindowNotesPdf,
+  windowPaneNotesPdf,
+} from "./fixture";
 import { plotDrawingPdf } from "./plot";
 import { stampPdf } from "./stamp";
 import { reconstructPdfLines } from "./text";
@@ -174,8 +179,17 @@ describe("pdf council set", () => {
     assert.match(xa.detail, /schedule measures/);
     assert.match(xa.adjust, /1 × W1/);
     assert.match(xa.adjust, /3 × W2/);
+    const windows = audit.failed.find((row) => row.id === "window-schedule");
+    assert.match(windows?.detail ?? "", /pane elevations missing/);
+  });
+
+  it("passes Part N when the plotted schedule prints overall and pane sizes", async () => {
+    const bytes = await windowPaneNotesPdf();
+    const extract = await extractPdf("window-panes.pdf", bytes);
+    const audit = auditFromDrawing("window-panes.pdf", extract);
     const windows = audit.passed.find((row) => row.id === "window-schedule");
-    assert.match(windows?.detail ?? "", /42\.00 m² glazed measured/);
+    assert.match(windows?.detail ?? "", /W1 600 × 1200 mm/);
+    assert.match(windows?.detail ?? "", /W2 600 × 1500 mm/);
   });
 
   it("fails readable text when the PDF has no notes", async () => {

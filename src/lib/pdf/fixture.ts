@@ -48,6 +48,26 @@ export async function measuredWindowNotesPdf() {
   return notesPdf(MEASURED_WINDOW_NOTES, false);
 }
 
+/** Overall sizes plus each pane — Part N can pass from the notes. */
+export const WINDOW_PANE_NOTES = [
+  "Proposed dwelling",
+  "14 Pane Road",
+  "Occupancy H4 dwelling",
+  "Fenestration Ground 7.3%",
+  "Ground nett floor 100 m2",
+  "Window schedule",
+  "Ground W1 1800 x 1200 x2",
+  "panes 600 x 1200, 1200 x 1200",
+  "Ground W2 2000 x 1500 x1",
+  "fixed 600 x 1500 openable 1400 x 1500",
+  "Soakpit stormwater Part R",
+  "Stairs 170mm riser 250mm going Part M",
+];
+
+export async function windowPaneNotesPdf() {
+  return notesPdf(WINDOW_PANE_NOTES, false);
+}
+
 async function notesPdf(notes: string[], splitGlyphs: boolean) {
   const pdf = await PDFDocument.create();
   const page = pdf.addPage([842, 595]);

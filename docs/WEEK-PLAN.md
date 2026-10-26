@@ -39,7 +39,6 @@ The engine now reads riser and going in millimetres (≤200 mm riser, ≥250 mm 
 - Rewriting the drawing
 - Cadcraft, PostHog, DWG/DXF in the UI
 - Naming the SANS clause on every row (closed PR #13)
-- Part N pane elevations (next candidate after this week)
 
 ## Sniffer log
 
@@ -84,4 +83,8 @@ How to read the **kind** column: **numbers** means the engine parsed a value; **
 | signatures | fail Blank | sniff | Signature field, no name |
 | eng-packs | fail To attach | sniff | `engineer` + `attach` |
 
-Next real check after this week: **Part N** pane elevations, or **Part R** if a sheet starts printing soakpit sizes.
+### After this week: Part N pane elevations
+
+When the schedule prints overall millimetre sizes, Part N now requires pane elevations too (`pane` / `fixed` / `openable` / `casement`). Overall without panes fails with a type-named adjust. Marine Drive still passes `W1–W19 with unit sizes drawn` (no parseable mm). Hartley still passes `Present` (the words “Window schedule”). A notes fixture with overall + panes passes the measured elevations.
+
+Next real check: **Part R** if a sheet starts printing soakpit sizes.

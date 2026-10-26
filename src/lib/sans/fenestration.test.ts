@@ -121,8 +121,8 @@ describe("audit uses measured fenestration", () => {
     assert.match(xa.detail, /schedule measures/);
     assert.match(xa.adjust, /1 × W1/);
     assert.match(xa.adjust, /3 × W2/);
-    const windows = audit.passed.find((row) => row.id === "window-schedule");
-    assert.match(windows?.detail ?? "", /42\.00 m² glazed measured/);
+    const windows = audit.failed.find((row) => row.id === "window-schedule");
+    assert.match(windows?.detail ?? "", /pane elevations missing/);
   });
 
   it("keeps Marine Drive XA numbers when the schedule has no sizes", () => {
