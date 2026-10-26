@@ -45,6 +45,8 @@ describe("pdf council set", () => {
     assert.ok(failed.includes("signatures"));
     assert.ok(failed.includes("eng-packs"));
     assert.ok(audit.passed.map((row) => row.id).includes("window-schedule"));
+    const stairs = audit.passed.find((row) => row.id === "part-m");
+    assert.equal(stairs?.detail, "170 mm riser, 250 mm going");
 
     const stamped = await stampPdf(bytes, audit, extract);
     const annotated = await PDFDocument.load(stamped);

@@ -79,4 +79,5 @@ Correct the engine if it diverges from these.
 | Pack failed checks into empty paper | Yes | — |
 | Annotated **PDF** out | Yes | — |
 | Measure glazed area from window schedule sizes | Yes | Pane-by-pane CAD / anonymous PDF strokes |
+| Measure stair riser and going from notes | Yes | Geometry |
 | True window pane dimensions from geometry | Not yet | Better with CAD geometry |

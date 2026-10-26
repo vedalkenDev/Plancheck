@@ -83,6 +83,8 @@ describe("marine-drive fixture", () => {
     assert.ok(passed.includes("window-schedule"));
     const windows = audit.passed.find((row) => row.id === "window-schedule");
     assert.match(windows?.detail ?? "", /W1/);
+    const stairs = audit.passed.find((row) => row.id === "part-m");
+    assert.equal(stairs?.detail, "170 mm riser, 250 mm going");
   });
 
   it("shows added text on the drawing and in the dxf", () => {
