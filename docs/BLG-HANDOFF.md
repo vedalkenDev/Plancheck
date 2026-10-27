@@ -69,7 +69,7 @@ Correct the engine if it diverges from these.
 ### 2. 130 Hartley Road, Sydenham
 
 - Occupancy **G1 medical offices** conversion (not H4).
-- **FAIL:** 130 vs 132 address; XA % missing; Part R soakpit; Part M stair dims; signatures / eng packs; stray titleblocks.
+- **FAIL:** 130 vs 132 address; XA % missing; Part R soakpit; Part M stair dims; Part T fire notes; signatures / eng packs; stray titleblocks.
 
 ## What still needs a CAD worker
 

@@ -6,7 +6,7 @@ import {
   suggestGlazingCuts,
   type StoreyFenestration,
 } from "@/lib/sans/fenestration";
-import { occupancyFromText } from "@/lib/sans/occupancy";
+import { needsFirePartT, occupancyFromText } from "@/lib/sans/occupancy";
 import { MAX_RISER_MM, MIN_GOING_MM, readStairs } from "@/lib/sans/stairs";
 import {
   describePanes,
@@ -17,6 +17,8 @@ import {
 const ADDRESS =
   /\b(\d{1,5})\s+([A-Za-z][A-Za-z]+(?:\s+[A-Za-z][A-Za-z]+){0,3}\s+(?:Road|Rd|Drive|Dr|Street|St|Avenue|Ave|Lane|Ln|Way|Crescent|Close))\b/gi;
 const FENESTRATION = /fenestr|glaz|window|l\/g|xa\s*4|sans 204|not required/i;
+const FIRE_NOTES =
+  /part\s*t|fire[\s-]*protect|fire escape|hose\s*reel|emergency exit/i;
 
 export type AuditContext = {
   filename: string;
@@ -248,13 +250,21 @@ export const SANS_RULES: Rule[] = [
     part: "T",
     check: "Fire protection",
     run: (ctx) => {
-      if (!/part\s*t|fire escape|fire protection|hose reel|emergency exit/i.test(ctx.blob)) {
+      if (FIRE_NOTES.test(ctx.blob)) {
+        return {
+          status: "pass",
+          detail: "Fire notes found",
+          evidence: quotes(ctx, FIRE_NOTES),
+        };
+      }
+      if (!needsFirePartT(ctx.occupancy)) {
         return { status: "skip" };
       }
       return {
-        status: "pass",
-        detail: "Fire notes found",
-        evidence: quotes(ctx, /part\s*t|fire escape|fire protection|hose reel|emergency exit/i),
+        status: "fail",
+        detail: "Part T fire notes not found",
+        adjust:
+          "Add Part T fire protection / escape notes required for this occupancy.",
       };
     },
   },
