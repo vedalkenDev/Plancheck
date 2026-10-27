@@ -145,6 +145,7 @@ describe("hartley-test2 fixture", () => {
       "eng-packs",
       "part-m",
       "part-r",
+      "part-t",
       "signatures",
       "titleblocks",
       "xa-fenestration",

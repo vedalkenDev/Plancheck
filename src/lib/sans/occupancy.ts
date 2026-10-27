@@ -50,3 +50,8 @@ export function occupancyFromText(blob: string) {
 
   return { code, note: OCCUPANCY_CLASSES[code] ?? "from the drawing" };
 }
+
+/** Occupancies that must show Part T fire / escape notes. H3–H5 dwellings skip. */
+export function needsFirePartT(code: string) {
+  return /^(A|B|C|E|F|G|H1|J)/.test(code);
+}

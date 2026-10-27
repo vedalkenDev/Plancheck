@@ -80,6 +80,7 @@ How to read the **kind** column: **numbers** means the engine parsed a value; **
 | coverage | pass | sniff | Nearby “coverage” text |
 | part-r | fail | sniff | No soakpit / stormwater |
 | part-m | fail Stair dims missing | sniff → **now numbers** | Was: word `Stairs` and no mm. Still fail, but now because riser and going are absent |
+| part-t | skip → **now fail** | sniff | G1 medical offices with no fire / escape notes. Was skip-if-absent (never a fail). H4 dwellings still skip |
 | signatures | fail Blank | sniff | Signature field, no name |
 | eng-packs | fail To attach | sniff | `engineer` + `attach` |
 
