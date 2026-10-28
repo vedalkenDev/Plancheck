@@ -20,6 +20,7 @@ export type NoteCard = {
   body: string;
   minW: number;
   minH: number;
+  tone?: "fail" | "note";
 };
 
 export type PlacedCard = {
@@ -95,6 +96,7 @@ export function cardsFromAudit(audit: AuditSample): NoteCard[] {
       body: `${row.detail}\n${row.adjust}`,
       minW: 200,
       minH: 80,
+      tone: "fail" as const,
     })),
   ];
 }
