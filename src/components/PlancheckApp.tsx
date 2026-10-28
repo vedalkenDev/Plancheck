@@ -1,9 +1,10 @@
 "use client";
 
-import { FileUp, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileUp, Maximize2, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { ChangeList, ReviewTitle } from "@/components/check-panels";
 import { DrawingPreview } from "@/components/DrawingPreview";
+import { PdfPageView } from "@/components/PdfPageView";
 import { ReviewDock } from "@/components/ReviewDock";
 import { SansBook } from "@/components/SansBook";
 import { ScanLoader } from "@/components/scanner/figure";
@@ -23,8 +24,8 @@ import {
 import type { AuditSample, SampleDrawing } from "@/data/types";
 import { auditFromDrawing, stampAudit } from "@/lib/cad";
 import type { DrawingExtract } from "@/lib/cad/extract";
-import { DISCLAIMER, auditToReport, downloadBlob } from "@/lib/checklist";
-import { extractPdf } from "@/lib/pdf/extract";
+import { DISCLAIMER, ENGINE_NOTE, auditToReport, downloadBlob } from "@/lib/checklist";
+import { extractPdf, type ExtractProgress } from "@/lib/pdf/extract";
 import { stampPdf } from "@/lib/pdf/stamp";
 
 type PlancheckAppProps = {
@@ -36,11 +37,35 @@ const DRAWING_NAME = /\.pdf$/i;
 const MAX_BYTES = 40 * 1024 * 1024;
 const MIN_SPIN_MS = 700;
 
-async function readPdf(filename: string, bytes: ArrayBuffer) {
+async function readPdf(
+  filename: string,
+  bytes: ArrayBuffer,
+  onProgress?: (info: ExtractProgress) => void,
+) {
   return {
-    drawing: await extractPdf(filename, bytes),
+    drawing: await extractPdf(filename, bytes, { onProgress }),
     pdfBytes: bytes.slice(0),
   };
+}
+
+function etaText(progress: ExtractProgress | null) {
+  const startedAt = progress?.startedAt ?? 0;
+  if (!progress || progress.page < 1 || progress.total < 2 || startedAt <= 0) {
+    return null;
+  }
+  const elapsed = Date.now() - startedAt;
+  const remainingMs = (elapsed / progress.page) * (progress.total - progress.page);
+  const seconds = Math.max(1, Math.round(remainingMs / 1000));
+  if (seconds < 60) {
+    return `About ${seconds}s left`;
+  }
+  const minutes = Math.max(1, Math.round(seconds / 60));
+  return `About ${minutes} min left`;
+}
+
+function howLabel(row: { clause?: string; how?: string }) {
+  const clause = row.clause ?? "SANS 10400";
+  return row.how === "measured" ? `${clause} · measured` : `${clause} · notes`;
 }
 
 export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
@@ -50,25 +75,52 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
   const [drawingName, setDrawingName] = useState("drawing");
   const [sheetIndex, setSheetIndex] = useState(0);
   const [pdfBytes, setPdfBytes] = useState<ArrayBuffer | null>(null);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const pdfUrlRef = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
+  const [progress, setProgress] = useState<ExtractProgress | null>(null);
   const [done, setDone] = useState<Record<string, boolean>>({});
+  const runId = useRef(0);
+
+  function adoptPdf(bytes: ArrayBuffer | null) {
+    if (pdfUrlRef.current) {
+      URL.revokeObjectURL(pdfUrlRef.current);
+      pdfUrlRef.current = null;
+    }
+    if (bytes) {
+      pdfUrlRef.current = URL.createObjectURL(new Blob([bytes.slice(0)], { type: "application/pdf" }));
+    }
+    setPdfBytes(bytes);
+    setPdfUrl(pdfUrlRef.current);
+  }
 
   function resetChecks() {
     setDone({});
   }
 
   function reset() {
+    runId.current += 1;
     setExtract(null);
     setSheetIndex(0);
-    setPdfBytes(null);
+    adoptPdf(null);
     setError(null);
     setReading(false);
+    setProgress(null);
     resetChecks();
     if (inputRef.current) {
       inputRef.current.value = "";
     }
   }
+
+  useEffect(
+    () => () => {
+      if (pdfUrlRef.current) {
+        URL.revokeObjectURL(pdfUrlRef.current);
+      }
+    },
+    [],
+  );
 
   async function inspect(file: File) {
     if (!DRAWING_NAME.test(file.name)) {
@@ -80,8 +132,11 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
       return;
     }
 
+    const id = runId.current + 1;
+    runId.current = id;
     setError(null);
     setReading(true);
+    setProgress({ page: 0, total: 0 });
     setSheetIndex(0);
     resetChecks();
 
@@ -92,16 +147,32 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
           setTimeout(resolve, MIN_SPIN_MS);
         }),
       ]);
-      const { drawing, pdfBytes: nextPdf } = await readPdf(file.name, bytes);
+      if (runId.current !== id) {
+        return;
+      }
+      const { drawing, pdfBytes: nextPdf } = await readPdf(file.name, bytes, (info) => {
+        if (runId.current === id) {
+          setProgress(info);
+        }
+      });
+      if (runId.current !== id) {
+        return;
+      }
       setDrawingName(file.name);
       setExtract(drawing);
-      setPdfBytes(nextPdf);
+      adoptPdf(nextPdf);
     } catch {
+      if (runId.current !== id) {
+        return;
+      }
       setError("The PDF could not be read. Plot a vector PDF from CAD and try again.");
       setExtract(null);
-      setPdfBytes(null);
+      adoptPdf(null);
     } finally {
-      setReading(false);
+      if (runId.current === id) {
+        setReading(false);
+        setProgress(null);
+      }
     }
   }
 
@@ -113,8 +184,11 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
   }
 
   async function loadSample(sample: SampleDrawing) {
+    const id = runId.current + 1;
+    runId.current = id;
     setError(null);
     setReading(true);
+    setProgress({ page: 0, total: 0 });
     setSheetIndex(0);
     resetChecks();
     try {
@@ -128,15 +202,31 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
         throw new Error("sample");
       }
       const bytes = await response.arrayBuffer();
+      if (runId.current !== id) {
+        return;
+      }
       const filename = sample.href.split("/").pop() ?? `${sample.id}.pdf`;
-      const { drawing, pdfBytes: nextPdf } = await readPdf(filename, bytes);
+      const { drawing, pdfBytes: nextPdf } = await readPdf(filename, bytes, (info) => {
+        if (runId.current === id) {
+          setProgress(info);
+        }
+      });
+      if (runId.current !== id) {
+        return;
+      }
       setDrawingName(sample.label);
       setExtract(drawing);
-      setPdfBytes(nextPdf);
+      adoptPdf(nextPdf);
     } catch {
+      if (runId.current !== id) {
+        return;
+      }
       setError("The sample drawing could not be loaded.");
     } finally {
-      setReading(false);
+      if (runId.current === id) {
+        setReading(false);
+        setProgress(null);
+      }
     }
   }
 
@@ -200,7 +290,7 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
       </header>
 
       <div className="grid min-h-0 flex-1 lg:grid-cols-3">
-        <section className="flex min-h-[28rem] min-w-0 flex-col border-b p-4 lg:min-h-0 lg:overflow-hidden lg:border-r lg:border-b-0 lg:p-6">
+        <section className="flex min-h-[70vh] min-w-0 flex-col border-b p-4 lg:col-span-2 lg:min-h-0 lg:overflow-hidden lg:border-r lg:border-b-0 lg:p-6">
           <input
             ref={inputRef}
             id={inputId}
@@ -213,6 +303,7 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
             <DrawingPane
               extract={viewed.extract}
               pdfBytes={pdfBytes}
+              pdfUrl={pdfUrl}
               label={viewed.audit.label}
               audit={viewed.audit}
               sheets={viewed.sheets}
@@ -232,7 +323,7 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
               <div className="w-full lg:hidden">
                 <ScanLoader />
               </div>
-              <p className="hidden text-sm lg:block">Inspecting drawing…</p>
+              <ReadProgress progress={progress} />
             </div>
           ) : (
             <label
@@ -278,11 +369,11 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
           </div>
         </section>
 
-        <section className="min-h-0 min-w-0 overflow-auto lg:col-span-2">
+        <section className="min-h-0 min-w-0 overflow-auto">
           <div className="space-y-6 p-4 md:p-6">
             <SansBook />
             {reading ? (
-              <InspectingState />
+              <InspectingState progress={progress} />
             ) : viewed ? (
               <Analysis
                 audit={viewed.audit}
@@ -304,6 +395,7 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
 function DrawingPane({
   extract,
   pdfBytes,
+  pdfUrl,
   label,
   audit,
   sheets,
@@ -315,6 +407,7 @@ function DrawingPane({
 }: {
   extract: DrawingExtract;
   pdfBytes: ArrayBuffer | null;
+  pdfUrl: string | null;
   label: string;
   audit: AuditSample | null;
   sheets: { name: string }[];
@@ -325,21 +418,33 @@ function DrawingPane({
   onReplace: () => void;
 }) {
   const [fullscreen, setFullscreen] = useState(false);
-  const drawn = extract.geometry.some((entity) => entity.kind !== "text");
 
   return (
     <>
       <div className="flex min-h-0 flex-1 flex-col gap-3 rounded-xl border-2 border-border bg-card p-4">
         <div className="flex items-center justify-between gap-2">
           <p className="truncate text-sm font-medium">{label}</p>
-          <Button type="button" variant="ghost" size="sm" onClick={onReplace}>
-            Replace
-          </Button>
+          <div className="flex shrink-0 items-center gap-1">
+            {pdfBytes ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Fullscreen"
+                onClick={() => setFullscreen(true)}
+              >
+                <Maximize2 />
+              </Button>
+            ) : null}
+            <Button type="button" variant="ghost" size="sm" onClick={onReplace}>
+              Replace
+            </Button>
+          </div>
         </div>
-        <SheetTabs sheets={sheets} sheetIndex={sheetIndex} onSheet={onSheet} />
-        <div className="min-h-0 flex-1 overflow-hidden rounded-lg border">
-          {pdfBytes && !drawn ? (
-            <PdfPreview bytes={pdfBytes} label={label} page={sheetIndex + 1} />
+        <SheetSwitcher sheets={sheets} sheetIndex={sheetIndex} onSheet={onSheet} />
+        <div className="relative min-h-0 flex-1 overflow-hidden rounded-lg border">
+          {pdfBytes && pdfUrl ? (
+            <PdfPageView bytes={pdfBytes} url={pdfUrl} label={label} page={sheetIndex + 1} />
           ) : (
             <DrawingPreview
               extract={extract}
@@ -352,6 +457,8 @@ function DrawingPane({
       {fullscreen ? (
         <FullscreenDrawing
           extract={extract}
+          pdfBytes={pdfBytes}
+          pdfUrl={pdfUrl}
           label={label}
           audit={audit}
           sheets={sheets}
@@ -366,7 +473,7 @@ function DrawingPane({
   );
 }
 
-function SheetTabs({
+function SheetSwitcher({
   sheets,
   sheetIndex,
   onSheet,
@@ -378,27 +485,52 @@ function SheetTabs({
   if (sheets.length < 2) {
     return null;
   }
+  const last = sheets.length - 1;
   return (
-    <div className="flex flex-wrap gap-1" role="tablist" aria-label="Sheets">
-      {sheets.map((sheet, index) => (
-        <Button
-          key={`${sheet.name}-${index}`}
-          type="button"
-          size="sm"
-          variant={index === sheetIndex ? "secondary" : "outline"}
-          role="tab"
-          aria-selected={index === sheetIndex}
-          onClick={() => onSheet(index)}
-        >
-          {sheet.name}
-        </Button>
-      ))}
+    <div className="flex items-center gap-2">
+      <Button
+        type="button"
+        variant="outline"
+        size="icon-sm"
+        aria-label="Previous sheet"
+        disabled={sheetIndex <= 0}
+        onClick={() => onSheet(sheetIndex - 1)}
+      >
+        <ChevronLeft />
+      </Button>
+      <p className="shrink-0 text-sm tabular-nums">
+        Sheet {sheetIndex + 1} of {sheets.length}
+      </p>
+      <Button
+        type="button"
+        variant="outline"
+        size="icon-sm"
+        aria-label="Next sheet"
+        disabled={sheetIndex >= last}
+        onClick={() => onSheet(sheetIndex + 1)}
+      >
+        <ChevronRight />
+      </Button>
+      <select
+        aria-label="Sheets"
+        className="h-7 min-w-0 flex-1 rounded-lg border border-input bg-background px-2 text-sm"
+        value={sheetIndex}
+        onChange={(event) => onSheet(Number(event.target.value))}
+      >
+        {sheets.map((sheet, index) => (
+          <option key={`${sheet.name}-${index}`} value={index}>
+            {sheet.name}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }
 
 function FullscreenDrawing({
   extract,
+  pdfBytes,
+  pdfUrl,
   label,
   audit,
   sheets,
@@ -409,6 +541,8 @@ function FullscreenDrawing({
   onClose,
 }: {
   extract: DrawingExtract;
+  pdfBytes: ArrayBuffer | null;
+  pdfUrl: string | null;
   label: string;
   audit: AuditSample | null;
   sheets: { name: string }[];
@@ -420,9 +554,14 @@ function FullscreenDrawing({
 }) {
   const shellRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
+  const sheetNavRef = useRef({ sheetIndex, sheets: sheets.length, onSheet });
 
   useEffect(() => {
     onCloseRef.current = onClose;
+  });
+
+  useEffect(() => {
+    sheetNavRef.current = { sheetIndex, sheets: sheets.length, onSheet };
   });
 
   useEffect(() => {
@@ -447,6 +586,17 @@ function FullscreenDrawing({
       if (event.key === "Escape" && !document.fullscreenElement) {
         onCloseRef.current();
       }
+      const nav = sheetNavRef.current;
+      if (event.key === "ArrowLeft") {
+        onSheetNav(Math.max(0, nav.sheetIndex - 1));
+      }
+      if (event.key === "ArrowRight") {
+        onSheetNav(Math.min(nav.sheets - 1, nav.sheetIndex + 1));
+      }
+    }
+
+    function onSheetNav(index: number) {
+      sheetNavRef.current.onSheet(index);
     }
 
     document.addEventListener("fullscreenchange", onFullscreenChange);
@@ -465,7 +615,7 @@ function FullscreenDrawing({
     <div ref={shellRef} className="fixed inset-0 z-50 flex flex-col bg-background">
       <div className="flex shrink-0 items-center gap-3 border-b px-3 py-2">
         <p className="max-w-xs truncate text-sm font-medium">{label}</p>
-        <SheetTabs sheets={sheets} sheetIndex={sheetIndex} onSheet={onSheet} />
+        <SheetSwitcher sheets={sheets} sheetIndex={sheetIndex} onSheet={onSheet} />
         <div className="min-w-0 flex-1" />
         <Button type="button" variant="outline" size="sm" onClick={onClose}>
           <X />
@@ -473,12 +623,16 @@ function FullscreenDrawing({
         </Button>
       </div>
       <div className="relative min-h-0 flex-1">
-        <DrawingPreview
-          extract={extract}
-          label={label}
-          fullscreen
-          onToggleFullscreen={onClose}
-        />
+        {pdfBytes && pdfUrl ? (
+          <PdfPageView bytes={pdfBytes} url={pdfUrl} label={label} page={sheetIndex + 1} />
+        ) : (
+          <DrawingPreview
+            extract={extract}
+            label={label}
+            fullscreen
+            onToggleFullscreen={onClose}
+          />
+        )}
         <ReviewDock audit={audit} done={done} setDone={setDone} />
       </div>
     </div>
@@ -491,42 +645,57 @@ function EmptyState() {
       <p className="max-w-md text-sm">
         Upload the council PDF to inspect it against SANS 10400 before you lodge.
       </p>
+      <p className="mt-3 max-w-md text-xs">{ENGINE_NOTE}</p>
     </div>
   );
 }
 
-function InspectingState() {
-  return (
-    <div className="hidden lg:block">
-      <p className="sr-only">Running SANS 10400 checks</p>
-      <ScanLoader />
-    </div>
-  );
-}
-
-function PdfPreview({
-  bytes,
-  label,
-  page,
+function InspectingState({
+  progress,
 }: {
-  bytes: ArrayBuffer;
-  label: string;
-  page: number;
+  progress: ExtractProgress | null;
 }) {
-  const url = useMemo(() => {
-    const blob = new Blob([bytes], { type: "application/pdf" });
-    return URL.createObjectURL(blob);
-  }, [bytes]);
-
-  useEffect(() => () => URL.revokeObjectURL(url), [url]);
-
   return (
-    <iframe
-      key={`${url}-${page}`}
-      title={label}
-      src={`${url}#page=${page}`}
-      className="h-full min-h-[22rem] w-full bg-background"
-    />
+    <div className="hidden space-y-4 lg:block">
+      <p className="sr-only">Reading the drawing and running SANS 10400 checks</p>
+      <ScanLoader />
+      <ReadProgress progress={progress} />
+    </div>
+  );
+}
+
+function ReadProgress({
+  progress,
+}: {
+  progress: ExtractProgress | null;
+}) {
+  const total = progress?.total ?? 0;
+  const page = progress?.page ?? 0;
+  const headline =
+    total < 1
+      ? "Opening the PDF…"
+      : page < 1
+        ? `Found ${total} sheets. Reading text…`
+        : `Reading sheet ${page} of ${total}`;
+  const eta = etaText(progress);
+  const percent = total > 0 ? Math.round((Math.max(page, 0) / total) * 100) : 0;
+  return (
+    <div className="flex w-full max-w-sm flex-col items-center gap-2 text-center">
+      <p className="text-sm">{headline}</p>
+      {eta ? <p className="text-xs text-muted-foreground">{eta}</p> : null}
+      {total > 0 ? (
+        <div
+          className="h-1 w-48 overflow-hidden rounded bg-muted"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={percent}
+          aria-label={headline}
+        >
+          <div className="h-full bg-foreground" style={{ width: `${percent}%` }} />
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -597,6 +766,8 @@ function Analysis({
         <p className="text-sm text-muted-foreground">{audit.warnings[0]}</p>
       ) : null}
 
+      <p className="text-xs text-muted-foreground">{ENGINE_NOTE}</p>
+
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader className="border-b">
@@ -620,6 +791,9 @@ function Analysis({
                       </TableCell>
                       <TableCell className="whitespace-normal">
                         {row.check}
+                        <span className="mt-0.5 block text-xs text-muted-foreground">
+                          {howLabel(row)}
+                        </span>
                       </TableCell>
                       <TableCell className="whitespace-normal text-muted-foreground">
                         {row.detail}
@@ -656,6 +830,9 @@ function Analysis({
                       </TableCell>
                       <TableCell className="whitespace-normal">
                         {row.check}
+                        <span className="mt-0.5 block text-xs text-muted-foreground">
+                          {howLabel(row)}
+                        </span>
                       </TableCell>
                       <TableCell className="whitespace-normal text-muted-foreground">
                         {row.detail}
