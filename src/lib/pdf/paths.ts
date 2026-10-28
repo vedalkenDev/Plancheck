@@ -15,10 +15,13 @@ type Matrix = [number, number, number, number, number, number];
 
 const IDENTITY: Matrix = [1, 0, 0, 1, 0, 0];
 
+export const MAX_PAGE_PATHS = 1200;
+
 /** Walk pdf.js constructPath ops so wall geometry is on the extract, not just labels. */
 export async function extractPagePaths(
   pdf: PdfDoc,
   pageNumber: number,
+  maxEntities = MAX_PAGE_PATHS,
 ): Promise<{ geometry: GeomEntity[]; width: number; height: number }> {
   const pdfjs = await getResolvedPDFJS();
   const ops = pdfjs.OPS;
@@ -30,6 +33,9 @@ export async function extractPagePaths(
   let ctm: Matrix = IDENTITY;
 
   for (let i = 0; i < list.fnArray.length; i += 1) {
+    if (geometry.length >= maxEntities) {
+      break;
+    }
     const fn = list.fnArray[i];
     const args = list.argsArray[i] as unknown[];
     if (fn === ops.save) {

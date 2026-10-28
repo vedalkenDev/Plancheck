@@ -3,12 +3,16 @@ export type CheckEvidence = {
   layer?: string;
 };
 
+export type CheckHow = "measured" | "notes";
+
 export type PassedCheck = {
   id: string;
   part: string;
   check: string;
   detail: string;
   status: "pass";
+  clause?: string;
+  how?: CheckHow;
   evidence?: CheckEvidence[];
 };
 
@@ -19,6 +23,8 @@ export type FailedCheck = {
   detail: string;
   status: "fail";
   adjust: string;
+  clause?: string;
+  how?: CheckHow;
   evidence?: CheckEvidence[];
 };
 

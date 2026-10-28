@@ -71,6 +71,8 @@ describe("audit uses measured pane elevations", () => {
     const windows = audit.passed.find((row) => row.id === "window-schedule");
     assert.match(windows?.detail ?? "", /W1 600 × 1200 mm \+ 1200 × 1200 mm/);
     assert.match(windows?.detail ?? "", /W2 600 × 1500 mm \+ 1400 × 1500 mm/);
+    assert.equal(windows?.how, "measured");
+    assert.equal(windows?.clause, "SANS 10400-N / A7");
     const xa = audit.passed.find((row) => row.id === "xa-fenestration");
     assert.match(xa?.detail ?? "", /7\.3%/);
   });
@@ -79,6 +81,7 @@ describe("audit uses measured pane elevations", () => {
     const audit = auditFromDrawing("measured.pdf", extractFrom(MEASURED_WINDOW_NOTES));
     const windows = audit.failed.find((row) => row.id === "window-schedule");
     assert.match(windows?.detail ?? "", /W1–W2 overall sizes drawn, pane elevations missing/);
+    assert.equal(windows?.how, "measured");
     assert.match(windows?.adjust ?? "", /pane width/);
     const xa = audit.failed.find((row) => row.id === "xa-fenestration");
     assert.ok(xa);
@@ -88,6 +91,7 @@ describe("audit uses measured pane elevations", () => {
     const audit = auditFromDrawing("marine-drive-notes.pdf", extractFrom(MARINE_DRIVE_NOTES));
     const windows = audit.passed.find((row) => row.id === "window-schedule");
     assert.equal(windows?.detail, "W1–W19 with unit sizes drawn");
+    assert.equal(windows?.how, "notes");
     assert.equal(readWindowSchedule(MARINE_DRIVE_NOTES.join("\n")).panes.length, 0);
   });
 

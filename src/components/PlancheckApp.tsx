@@ -1,6 +1,6 @@
 "use client";
 
-import { FileUp, X } from "lucide-react";
+import { FileUp, Maximize2, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { ChangeList, PassedList, ReviewTitle } from "@/components/check-panels";
 import { DrawingPreview } from "@/components/DrawingPreview";
@@ -15,8 +15,8 @@ import { Separator } from "@/components/ui/separator";
 import type { AuditSample, SampleDrawing } from "@/data/types";
 import { auditFromDrawing, stampAudit } from "@/lib/cad";
 import type { DrawingExtract } from "@/lib/cad/extract";
-import { DISCLAIMER, auditToReport, downloadBlob } from "@/lib/checklist";
-import { extractPdf } from "@/lib/pdf/extract";
+import { DISCLAIMER, ENGINE_NOTE, auditToReport, downloadBlob } from "@/lib/checklist";
+import { extractPdf, type ExtractProgress } from "@/lib/pdf/extract";
 import { stampPdf } from "@/lib/pdf/stamp";
 
 type PlancheckAppProps = {
@@ -28,11 +28,30 @@ const DRAWING_NAME = /\.pdf$/i;
 const MAX_BYTES = 40 * 1024 * 1024;
 const MIN_SPIN_MS = 700;
 
-async function readPdf(filename: string, bytes: ArrayBuffer) {
+async function readPdf(
+  filename: string,
+  bytes: ArrayBuffer,
+  onProgress?: (info: ExtractProgress) => void,
+) {
   return {
-    drawing: await extractPdf(filename, bytes),
+    drawing: await extractPdf(filename, bytes, { onProgress }),
     pdfBytes: bytes.slice(0),
   };
+}
+
+function etaText(progress: ExtractProgress | null) {
+  const startedAt = progress?.startedAt ?? 0;
+  if (!progress || progress.page < 1 || progress.total < 2 || startedAt <= 0) {
+    return null;
+  }
+  const elapsed = Date.now() - startedAt;
+  const remainingMs = (elapsed / progress.page) * (progress.total - progress.page);
+  const seconds = Math.max(1, Math.round(remainingMs / 1000));
+  if (seconds < 60) {
+    return `About ${seconds}s left`;
+  }
+  const minutes = Math.max(1, Math.round(seconds / 60));
+  return `About ${minutes} min left`;
 }
 
 export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
@@ -44,18 +63,26 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
   const [pdfBytes, setPdfBytes] = useState<ArrayBuffer | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
+  const [progress, setProgress] = useState<ExtractProgress | null>(null);
   const [done, setDone] = useState<Record<string, boolean>>({});
+  const runId = useRef(0);
+
+  function adoptPdf(bytes: ArrayBuffer | null) {
+    setPdfBytes(bytes);
+  }
 
   function resetChecks() {
     setDone({});
   }
 
   function reset() {
+    runId.current += 1;
     setExtract(null);
     setSheetIndex(0);
-    setPdfBytes(null);
+    adoptPdf(null);
     setError(null);
     setReading(false);
+    setProgress(null);
     resetChecks();
     if (inputRef.current) {
       inputRef.current.value = "";
@@ -72,8 +99,11 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
       return;
     }
 
+    const id = runId.current + 1;
+    runId.current = id;
     setError(null);
     setReading(true);
+    setProgress({ page: 0, total: 0 });
     setSheetIndex(0);
     resetChecks();
 
@@ -84,16 +114,32 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
           setTimeout(resolve, MIN_SPIN_MS);
         }),
       ]);
-      const { drawing, pdfBytes: nextPdf } = await readPdf(file.name, bytes);
+      if (runId.current !== id) {
+        return;
+      }
+      const { drawing, pdfBytes: nextPdf } = await readPdf(file.name, bytes, (info) => {
+        if (runId.current === id) {
+          setProgress(info);
+        }
+      });
+      if (runId.current !== id) {
+        return;
+      }
       setDrawingName(file.name);
       setExtract(drawing);
-      setPdfBytes(nextPdf);
+      adoptPdf(nextPdf);
     } catch {
+      if (runId.current !== id) {
+        return;
+      }
       setError("The PDF could not be read. Plot a vector PDF from CAD and try again.");
       setExtract(null);
-      setPdfBytes(null);
+      adoptPdf(null);
     } finally {
-      setReading(false);
+      if (runId.current === id) {
+        setReading(false);
+        setProgress(null);
+      }
     }
   }
 
@@ -105,8 +151,11 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
   }
 
   async function loadSample(sample: SampleDrawing) {
+    const id = runId.current + 1;
+    runId.current = id;
     setError(null);
     setReading(true);
+    setProgress({ page: 0, total: 0 });
     setSheetIndex(0);
     resetChecks();
     try {
@@ -120,15 +169,31 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
         throw new Error("sample");
       }
       const bytes = await response.arrayBuffer();
+      if (runId.current !== id) {
+        return;
+      }
       const filename = sample.href.split("/").pop() ?? `${sample.id}.pdf`;
-      const { drawing, pdfBytes: nextPdf } = await readPdf(filename, bytes);
+      const { drawing, pdfBytes: nextPdf } = await readPdf(filename, bytes, (info) => {
+        if (runId.current === id) {
+          setProgress(info);
+        }
+      });
+      if (runId.current !== id) {
+        return;
+      }
       setDrawingName(sample.label);
       setExtract(drawing);
-      setPdfBytes(nextPdf);
+      adoptPdf(nextPdf);
     } catch {
+      if (runId.current !== id) {
+        return;
+      }
       setError("The sample drawing could not be loaded.");
     } finally {
-      setReading(false);
+      if (runId.current === id) {
+        setReading(false);
+        setProgress(null);
+      }
     }
   }
 
@@ -192,7 +257,7 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
       </header>
 
       <div className="grid min-h-0 flex-1 lg:grid-cols-3">
-        <section className="flex min-h-[28rem] min-w-0 flex-col border-b p-4 lg:min-h-0 lg:overflow-hidden lg:border-r lg:border-b-0 lg:p-6">
+        <section className="flex min-h-[70vh] min-w-0 flex-col border-b p-4 lg:col-span-2 lg:min-h-0 lg:overflow-hidden lg:border-r lg:border-b-0 lg:p-6">
           <input
             ref={inputRef}
             id={inputId}
@@ -224,7 +289,7 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
               <div className="w-full lg:hidden">
                 <ScanLoader />
               </div>
-              <p className="hidden text-sm lg:block">Inspecting drawing…</p>
+              <ReadProgress progress={progress} />
             </div>
           ) : (
             <label
@@ -270,11 +335,11 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
           </div>
         </section>
 
-        <section className="min-h-0 min-w-0 overflow-auto lg:col-span-2">
+        <section className="min-h-0 min-w-0 overflow-auto">
           <div className="space-y-6 p-4 md:p-6">
             <SansBook />
             {reading ? (
-              <InspectingState />
+              <InspectingState progress={progress} />
             ) : viewed ? (
               <Analysis
                 audit={viewed.audit}
@@ -323,9 +388,22 @@ function DrawingPane({
       <div className="flex min-h-0 flex-1 flex-col gap-3 rounded-xl border-2 border-border bg-card p-4">
         <div className="flex items-center justify-between gap-2">
           <p className="truncate text-sm font-medium">{label}</p>
-          <Button type="button" variant="ghost" size="sm" onClick={onReplace}>
-            Replace
-          </Button>
+          <div className="flex shrink-0 items-center gap-1">
+            {pdfBytes ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Fullscreen"
+                onClick={() => setFullscreen(true)}
+              >
+                <Maximize2 />
+              </Button>
+            ) : null}
+            <Button type="button" variant="ghost" size="sm" onClick={onReplace}>
+              Replace
+            </Button>
+          </div>
         </div>
         <div className="min-h-0 flex-1 overflow-hidden rounded-lg border">
           {pdfBytes ? (
@@ -392,9 +470,14 @@ function FullscreenDrawing({
 }) {
   const shellRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
+  const sheetNavRef = useRef({ sheetIndex, sheets: sheets.length, onSheet });
 
   useEffect(() => {
     onCloseRef.current = onClose;
+  });
+
+  useEffect(() => {
+    sheetNavRef.current = { sheetIndex, sheets: sheets.length, onSheet };
   });
 
   useEffect(() => {
@@ -419,6 +502,17 @@ function FullscreenDrawing({
       if (event.key === "Escape" && !document.fullscreenElement) {
         onCloseRef.current();
       }
+      const nav = sheetNavRef.current;
+      if (event.key === "ArrowLeft") {
+        onSheetNav(Math.max(0, nav.sheetIndex - 1));
+      }
+      if (event.key === "ArrowRight") {
+        onSheetNav(Math.min(nav.sheets - 1, nav.sheetIndex + 1));
+      }
+    }
+
+    function onSheetNav(index: number) {
+      sheetNavRef.current.onSheet(index);
     }
 
     document.addEventListener("fullscreenchange", onFullscreenChange);
@@ -477,15 +571,56 @@ function EmptyState() {
       <p className="max-w-md text-sm">
         Upload the council PDF to inspect it against SANS 10400 before you lodge.
       </p>
+      <p className="mt-3 max-w-md text-xs">{ENGINE_NOTE}</p>
     </div>
   );
 }
 
-function InspectingState() {
+function InspectingState({
+  progress,
+}: {
+  progress: ExtractProgress | null;
+}) {
   return (
-    <div className="hidden lg:block">
-      <p className="sr-only">Running SANS 10400 checks</p>
+    <div className="hidden space-y-4 lg:block">
+      <p className="sr-only">Reading the drawing and running SANS 10400 checks</p>
       <ScanLoader />
+      <ReadProgress progress={progress} />
+    </div>
+  );
+}
+
+function ReadProgress({
+  progress,
+}: {
+  progress: ExtractProgress | null;
+}) {
+  const total = progress?.total ?? 0;
+  const page = progress?.page ?? 0;
+  const headline =
+    total < 1
+      ? "Opening the PDF…"
+      : page < 1
+        ? `Found ${total} sheets. Reading text…`
+        : `Reading sheet ${page} of ${total}`;
+  const eta = etaText(progress);
+  const percent = total > 0 ? Math.round((Math.max(page, 0) / total) * 100) : 0;
+  return (
+    <div className="flex w-full max-w-sm flex-col items-center gap-2 text-center">
+      <p className="text-sm">{headline}</p>
+      {eta ? <p className="text-xs text-muted-foreground">{eta}</p> : null}
+      {total > 0 ? (
+        <div
+          className="h-1 w-48 overflow-hidden rounded bg-muted"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={percent}
+          aria-label={headline}
+        >
+          <div className="h-full bg-foreground" style={{ width: `${percent}%` }} />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -553,6 +688,8 @@ function Analysis({
       {audit.warnings?.length ? (
         <p className="text-sm text-muted-foreground">{audit.warnings[0]}</p>
       ) : null}
+
+      <p className="text-xs text-muted-foreground">{ENGINE_NOTE}</p>
 
       {audit.failed.length ? (
         <section className="space-y-3">
