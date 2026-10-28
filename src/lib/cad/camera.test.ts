@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { clampZoom, fitCamera, panCamera, zoomCamera } from "./camera";
+import { clampZoom, fitCamera, panCamera, zoomCamera, zoomPercent } from "./camera";
 
 const frame = { minX: 0, minY: 0, maxX: 100, maxY: 50 };
 
@@ -38,5 +38,12 @@ describe("drawing camera", () => {
     const camera = fitCamera(frame, 200, 200, 0);
     const tooFar = zoomCamera(camera, 0.001, 100, 100, 200, 200);
     assert.equal(clampZoom(camera, frame, tooFar), camera);
+  });
+
+  it("reports zoom against a fitted camera", () => {
+    const fit = fitCamera(frame, 200, 200, 0);
+    assert.equal(zoomPercent(fit, fit), 100);
+    const closer = zoomCamera(fit, 2, 100, 100, 200, 200);
+    assert.equal(zoomPercent(fit, closer), 200);
   });
 });

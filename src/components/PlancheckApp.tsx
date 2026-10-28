@@ -2,24 +2,16 @@
 
 import { FileUp, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { ChangeList, ReviewTitle } from "@/components/check-panels";
+import { ChangeList, PassedList, ReviewTitle } from "@/components/check-panels";
 import { DrawingPreview } from "@/components/DrawingPreview";
+import { PdfPreview } from "@/components/PdfPreview";
 import { ReviewDock } from "@/components/ReviewDock";
 import { SansBook } from "@/components/SansBook";
 import { ScanLoader } from "@/components/scanner/figure";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import type { AuditSample, SampleDrawing } from "@/data/types";
 import { auditFromDrawing, stampAudit } from "@/lib/cad";
 import type { DrawingExtract } from "@/lib/cad/extract";
@@ -325,7 +317,6 @@ function DrawingPane({
   onReplace: () => void;
 }) {
   const [fullscreen, setFullscreen] = useState(false);
-  const drawn = extract.geometry.some((entity) => entity.kind !== "text");
 
   return (
     <>
@@ -336,14 +327,23 @@ function DrawingPane({
             Replace
           </Button>
         </div>
-        <SheetTabs sheets={sheets} sheetIndex={sheetIndex} onSheet={onSheet} />
         <div className="min-h-0 flex-1 overflow-hidden rounded-lg border">
-          {pdfBytes && !drawn ? (
-            <PdfPreview bytes={pdfBytes} label={label} page={sheetIndex + 1} />
+          {pdfBytes ? (
+            <PdfPreview
+              bytes={pdfBytes}
+              label={label}
+              page={sheetIndex + 1}
+              pageCount={sheets.length}
+              onPage={(next) => onSheet(next - 1)}
+              onToggleFullscreen={() => setFullscreen(true)}
+            />
           ) : (
             <DrawingPreview
               extract={extract}
               label={label}
+              page={sheetIndex + 1}
+              pageCount={sheets.length}
+              onPage={(next) => onSheet(next - 1)}
               onToggleFullscreen={() => setFullscreen(true)}
             />
           )}
@@ -352,6 +352,7 @@ function DrawingPane({
       {fullscreen ? (
         <FullscreenDrawing
           extract={extract}
+          pdfBytes={pdfBytes}
           label={label}
           audit={audit}
           sheets={sheets}
@@ -366,39 +367,9 @@ function DrawingPane({
   );
 }
 
-function SheetTabs({
-  sheets,
-  sheetIndex,
-  onSheet,
-}: {
-  sheets: { name: string }[];
-  sheetIndex: number;
-  onSheet: (index: number) => void;
-}) {
-  if (sheets.length < 2) {
-    return null;
-  }
-  return (
-    <div className="flex flex-wrap gap-1" role="tablist" aria-label="Sheets">
-      {sheets.map((sheet, index) => (
-        <Button
-          key={`${sheet.name}-${index}`}
-          type="button"
-          size="sm"
-          variant={index === sheetIndex ? "secondary" : "outline"}
-          role="tab"
-          aria-selected={index === sheetIndex}
-          onClick={() => onSheet(index)}
-        >
-          {sheet.name}
-        </Button>
-      ))}
-    </div>
-  );
-}
-
 function FullscreenDrawing({
   extract,
+  pdfBytes,
   label,
   audit,
   sheets,
@@ -409,6 +380,7 @@ function FullscreenDrawing({
   onClose,
 }: {
   extract: DrawingExtract;
+  pdfBytes: ArrayBuffer | null;
   label: string;
   audit: AuditSample | null;
   sheets: { name: string }[];
@@ -465,7 +437,6 @@ function FullscreenDrawing({
     <div ref={shellRef} className="fixed inset-0 z-50 flex flex-col bg-background">
       <div className="flex shrink-0 items-center gap-3 border-b px-3 py-2">
         <p className="max-w-xs truncate text-sm font-medium">{label}</p>
-        <SheetTabs sheets={sheets} sheetIndex={sheetIndex} onSheet={onSheet} />
         <div className="min-w-0 flex-1" />
         <Button type="button" variant="outline" size="sm" onClick={onClose}>
           <X />
@@ -473,12 +444,27 @@ function FullscreenDrawing({
         </Button>
       </div>
       <div className="relative min-h-0 flex-1">
-        <DrawingPreview
-          extract={extract}
-          label={label}
-          fullscreen
-          onToggleFullscreen={onClose}
-        />
+        {pdfBytes ? (
+          <PdfPreview
+            bytes={pdfBytes}
+            label={label}
+            page={sheetIndex + 1}
+            pageCount={sheets.length}
+            onPage={(next) => onSheet(next - 1)}
+            fullscreen
+            onToggleFullscreen={onClose}
+          />
+        ) : (
+          <DrawingPreview
+            extract={extract}
+            label={label}
+            page={sheetIndex + 1}
+            pageCount={sheets.length}
+            onPage={(next) => onSheet(next - 1)}
+            fullscreen
+            onToggleFullscreen={onClose}
+          />
+        )}
         <ReviewDock audit={audit} done={done} setDone={setDone} />
       </div>
     </div>
@@ -501,32 +487,6 @@ function InspectingState() {
       <p className="sr-only">Running SANS 10400 checks</p>
       <ScanLoader />
     </div>
-  );
-}
-
-function PdfPreview({
-  bytes,
-  label,
-  page,
-}: {
-  bytes: ArrayBuffer;
-  label: string;
-  page: number;
-}) {
-  const url = useMemo(() => {
-    const blob = new Blob([bytes], { type: "application/pdf" });
-    return URL.createObjectURL(blob);
-  }, [bytes]);
-
-  useEffect(() => () => URL.revokeObjectURL(url), [url]);
-
-  return (
-    <iframe
-      key={`${url}-${page}`}
-      title={label}
-      src={`${url}#page=${page}`}
-      className="h-full min-h-[22rem] w-full bg-background"
-    />
   );
 }
 
@@ -569,13 +529,10 @@ function Analysis({
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="max-w-3xl space-y-10">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
-          <p className="text-xs tracking-wide text-muted-foreground uppercase">
-            Project
-          </p>
-          <h2 className="font-heading text-lg font-medium md:text-xl">
+          <h2 className="font-heading text-lg font-medium text-balance md:text-xl">
             {audit.project}
           </h2>
           <p className="text-sm text-muted-foreground">
@@ -597,99 +554,28 @@ function Analysis({
         <p className="text-sm text-muted-foreground">{audit.warnings[0]}</p>
       ) : null}
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Card>
-          <CardHeader className="border-b">
-            <ReviewTitle id="passed" />
-          </CardHeader>
-          <CardContent>
-            {audit.passed.length ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Part</TableHead>
-                    <TableHead>Check</TableHead>
-                    <TableHead>Detail</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {audit.passed.map((row) => (
-                    <TableRow key={row.id}>
-                      <TableCell className="font-mono text-xs whitespace-normal">
-                        {row.part}
-                      </TableCell>
-                      <TableCell className="whitespace-normal">
-                        {row.check}
-                      </TableCell>
-                      <TableCell className="whitespace-normal text-muted-foreground">
-                        {row.detail}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : (
-              <p className="text-sm text-muted-foreground">No passing checks yet.</p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="border-b">
-            <ReviewTitle id="failed" />
-          </CardHeader>
-          <CardContent>
-            {audit.failed.length ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Part</TableHead>
-                    <TableHead>Check</TableHead>
-                    <TableHead>Detail</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {audit.failed.map((row) => (
-                    <TableRow key={row.id}>
-                      <TableCell className="font-mono text-xs whitespace-normal">
-                        {row.part}
-                      </TableCell>
-                      <TableCell className="whitespace-normal">
-                        {row.check}
-                      </TableCell>
-                      <TableCell className="whitespace-normal text-muted-foreground">
-                        {row.detail}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Nothing failed on the checks we could read.
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader className="border-b">
+      {audit.failed.length ? (
+        <section className="space-y-3">
           <ReviewTitle
             id="changes"
             extra={
-              audit.failed.length ? (
-                <span className="text-sm font-normal text-muted-foreground">
-                  {remaining} left
-                </span>
-              ) : null
+              <span className="text-sm font-normal text-muted-foreground">
+                {remaining} left
+              </span>
             }
           />
-        </CardHeader>
-        <CardContent>
           <ChangeList rows={audit.failed} done={done} setDone={setDone} />
-        </CardContent>
-      </Card>
+        </section>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          Nothing failed on the checks we could read.
+        </p>
+      )}
+
+      <section className="space-y-3">
+        <ReviewTitle id="passed" />
+        <PassedList rows={audit.passed} />
+      </section>
 
       <div className="flex flex-wrap gap-2">
         <Button

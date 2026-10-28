@@ -98,3 +98,11 @@ export function clampZoom(camera: Camera, frame: Frame, next: Camera): Camera {
 export function cameraViewBox(camera: Camera) {
   return `${camera.x} ${camera.y} ${camera.width} ${camera.height}`;
 }
+
+/** Zoom relative to a fitted camera. Fit is 100. */
+export function zoomPercent(fit: Camera, current: Camera) {
+  if (current.width <= 0) {
+    return 100;
+  }
+  return Math.round((fit.width / current.width) * 100);
+}
