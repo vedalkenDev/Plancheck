@@ -4,16 +4,20 @@ import { DISCLAIMER } from "@/lib/checklist";
 import { cardsFromAudit, layoutNoteCards, type NoteCard, type PlacedCard } from "@/lib/pdf/space";
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 
-/** Draw failed checks into empty paper on the sheet. Overflow goes to a notes page. */
+export type StampKind = "inspect" | "correct";
+
+/** Draw note cards into empty paper on the sheet. Overflow goes to a notes page. */
 export async function stampPdf(
   bytes: ArrayBuffer | Uint8Array,
   audit: AuditSample,
   extract?: DrawingExtract,
+  options?: { kind?: StampKind; cards?: NoteCard[] },
 ) {
   const pdf = await PDFDocument.load(bytes);
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
-  const remaining = cardsFromAudit(audit);
+  const kind = options?.kind ?? "inspect";
+  const remaining = [...(options?.cards ?? cardsFromAudit(audit))];
 
   if (extract) {
     const pages = pdf.getPages();
@@ -35,13 +39,21 @@ export async function stampPdf(
     return pdf.save();
   }
 
-  drawNotesPage(pdf, audit, remaining, font, bold);
+  if (kind === "correct") {
+    drawCorrectionPage(pdf, audit, remaining, font, bold);
+  } else {
+    drawNotesPage(pdf, audit, remaining, font, bold);
+  }
   return pdf.save();
+}
+
+function isFailCard(card: NoteCard) {
+  return (card.tone ?? (card.id === "verdict" ? "note" : "fail")) === "fail";
 }
 
 function drawCard(page: PDFPage, item: PlacedCard, font: PDFFont, bold: PDFFont) {
   const { rect, card } = item;
-  const fail = card.id !== "verdict";
+  const fail = isFailCard(card);
   const ink = rgb(0.11, 0.1, 0.09);
   const accent = fail ? rgb(0.72, 0.11, 0.11) : ink;
   const mute = rgb(0.42, 0.41, 0.4);
@@ -141,6 +153,53 @@ function drawNotesPage(
   }
 
   form.updateFieldAppearances(font);
+}
+
+function drawCorrectionPage(
+  pdf: PDFDocument,
+  audit: AuditSample,
+  leftover: NoteCard[],
+  font: PDFFont,
+  bold: PDFFont,
+) {
+  const notes = pdf.addPage([595.28, 841.89]);
+  const ink = rgb(0.11, 0.1, 0.09);
+  const mute = rgb(0.42, 0.41, 0.4);
+  notes.drawText("Plancheck corrector", { x: 48, y: 792, size: 16, font: bold, color: ink });
+  notes.drawText(clip(audit.project, 70), { x: 48, y: 770, size: 11, font, color: ink });
+  notes.drawText(clip(`${audit.address}  ${audit.occupancy} ${audit.occupancyNote}`, 80), {
+    x: 48,
+    y: 754,
+    size: 10,
+    font,
+    color: ink,
+  });
+  notes.drawText(DISCLAIMER, { x: 48, y: 736, size: 8, font, color: mute });
+  notes.drawText("These SANS notes did not fit in empty paper on the drawing.", {
+    x: 48,
+    y: 720,
+    size: 8,
+    font,
+    color: mute,
+  });
+
+  let top = 688;
+  for (const card of leftover.filter((item) => item.id !== "verdict")) {
+    if (top < 80) {
+      break;
+    }
+    notes.drawText(clip(card.title, 70), { x: 48, y: top, size: 10, font: bold, color: ink });
+    const lines = wrap(font, clipAnsi(card.body), 8, 499);
+    let y = top - 16;
+    for (const line of lines) {
+      if (y < 48) {
+        break;
+      }
+      notes.drawText(line, { x: 48, y, size: 8, font, color: ink });
+      y -= 11;
+    }
+    top = y - 18;
+  }
 }
 
 function wrap(font: PDFFont, text: string, size: number, width: number) {

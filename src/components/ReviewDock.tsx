@@ -1,22 +1,44 @@
 "use client";
 
 import { useState } from "react";
-import { ChangeList, FailedList, PassedList, REVIEW_TABS, type ReviewTab } from "@/components/check-panels";
+import {
+  ChangeList,
+  CorrectionList,
+  CorrectionSkipList,
+  FailedList,
+  PassedList,
+  REVIEW_TABS,
+  type ReviewTab,
+} from "@/components/check-panels";
 import type { AuditSample } from "@/data/types";
+import type { CorrectionPlan } from "@/lib/sans/correct";
 import { cn } from "cn";
 
 type ReviewDockProps = {
   audit: AuditSample | null;
   done: Record<string, boolean>;
   setDone: (value: Record<string, boolean>) => void;
+  mode?: "inspect" | "correct";
+  plan?: CorrectionPlan;
+  picked?: Record<string, boolean>;
+  setPicked?: (value: Record<string, boolean>) => void;
 };
 
-export function ReviewDock({ audit, done, setDone }: ReviewDockProps) {
+export function ReviewDock({
+  audit,
+  done,
+  setDone,
+  mode = "inspect",
+  plan,
+  picked,
+  setPicked,
+}: ReviewDockProps) {
   const [hover, setHover] = useState<ReviewTab | null>(null);
   const [pinned, setPinned] = useState<ReviewTab | null>(null);
   const shown = hover ?? pinned;
   const tab = REVIEW_TABS.find((item) => item.id === shown) ?? null;
   const remaining = audit?.failed.filter((row) => !done[row.id]).length ?? 0;
+  const adding = plan?.add.filter((row) => picked?.[row.id] !== false).length ?? 0;
 
   function count(id: ReviewTab) {
     if (!audit) {
@@ -28,7 +50,7 @@ export function ReviewDock({ audit, done, setDone }: ReviewDockProps) {
     if (id === "failed") {
       return audit.failed.length;
     }
-    return remaining;
+    return mode === "correct" ? adding : remaining;
   }
 
   return (
@@ -40,15 +62,26 @@ export function ReviewDock({ audit, done, setDone }: ReviewDockProps) {
         <aside className="flex h-full w-[min(24rem,calc(100vw-3.5rem))] flex-col border-l bg-card shadow-xl">
           <header className="flex items-center gap-2 border-b px-4 py-3">
             <tab.icon className={cn("size-4", tab.iconClass)} />
-            <h2 className="text-sm font-medium">{tab.label}</h2>
-            {tab.id === "changes" && audit.failed.length ? (
+            <h2 className="text-sm font-medium">
+              {tab.id === "changes" && mode === "correct" ? "Notes to add" : tab.label}
+            </h2>
+            {tab.id === "changes" && mode === "correct" && plan?.add.length ? (
+              <span className="text-xs text-muted-foreground">{adding} selected</span>
+            ) : null}
+            {tab.id === "changes" && mode !== "correct" && audit.failed.length ? (
               <span className="text-xs text-muted-foreground">{remaining} left</span>
             ) : null}
           </header>
           <div className="min-h-0 flex-1 overflow-auto px-4">
             {tab.id === "passed" ? <PassedList rows={audit.passed} /> : null}
             {tab.id === "failed" ? <FailedList rows={audit.failed} /> : null}
-            {tab.id === "changes" ? (
+            {tab.id === "changes" && mode === "correct" && plan && picked && setPicked ? (
+              <div className="space-y-6 py-2">
+                <CorrectionList rows={plan.add} selected={picked} setSelected={setPicked} />
+                <CorrectionSkipList rows={plan.skip} />
+              </div>
+            ) : null}
+            {tab.id === "changes" && mode !== "correct" ? (
               <ChangeList rows={audit.failed} done={done} setDone={setDone} />
             ) : null}
           </div>

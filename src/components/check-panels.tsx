@@ -2,6 +2,7 @@ import { CircleCheck, CircleX, ListChecks, type LucideIcon } from "lucide-react"
 import type { ReactNode } from "react";
 import { CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import type { Correction, CorrectionSkip } from "@/lib/sans/correct";
 import type { FailedCheck, PassedCheck } from "@/data/types";
 import { cn } from "cn";
 
@@ -137,6 +138,65 @@ export function ChangeList({
             <p className="text-sm text-muted-foreground">{row.detail}</p>
             <p className="text-sm">{row.adjust}</p>
           </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export function CorrectionList({
+  rows,
+  selected,
+  setSelected,
+}: {
+  rows: Correction[];
+  selected: Record<string, boolean>;
+  setSelected: (value: Record<string, boolean>) => void;
+}) {
+  if (!rows.length) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Nothing we can write as a SANS note on this drawing.
+      </p>
+    );
+  }
+  return (
+    <ul className="divide-y">
+      {rows.map((row) => (
+        <li key={row.id} className="flex items-start gap-3 py-3">
+          <Checkbox
+            checked={selected[row.id] !== false}
+            onCheckedChange={(value) =>
+              setSelected({ ...selected, [row.id]: value === true })
+            }
+            aria-label={`Add ${row.check} note`}
+            className="mt-0.5"
+          />
+          <div className="space-y-1">
+            <p className="text-sm font-medium">
+              {row.part} · {row.check}
+            </p>
+            <p className="text-xs text-muted-foreground">{row.clause}</p>
+            <p className="text-sm">{row.body}</p>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export function CorrectionSkipList({ rows }: { rows: CorrectionSkip[] }) {
+  if (!rows.length) {
+    return null;
+  }
+  return (
+    <ul className="divide-y">
+      {rows.map((row) => (
+        <li key={row.id} className="space-y-1 py-3">
+          <p className="text-sm font-medium">
+            {row.part} · {row.check}
+          </p>
+          <p className="text-sm text-muted-foreground">{row.reason}</p>
         </li>
       ))}
     </ul>

@@ -6,12 +6,16 @@ import { cardsFromAudit, layoutNoteCards, type PlacedCard } from "@/lib/pdf/spac
 
 const STAMP_LAYERS = new Set(["COUNCIL_CHECK", "COUNCIL_FIXES"]);
 
-export function stampAudit(extract: DrawingExtract, audit: AuditSample): DrawingExtract {
+export function stampAudit(
+  extract: DrawingExtract,
+  audit: AuditSample,
+  cards = cardsFromAudit(audit),
+): DrawingExtract {
   const base = extract.geometry.filter((entity) => !STAMP_LAYERS.has(entity.layer ?? ""));
   const pageW = extract.pageWidth;
   const pageH = extract.pageHeight;
   if (pageW && pageH && pageW > 1 && pageH > 1) {
-    const { placed } = layoutNoteCards(base, { width: pageW, height: pageH }, cardsFromAudit(audit));
+    const { placed } = layoutNoteCards(base, { width: pageW, height: pageH }, cards);
     return {
       ...extract,
       geometry: [...base, ...cardsToGeometry(placed)],
@@ -32,10 +36,14 @@ export function stampAudit(extract: DrawingExtract, audit: AuditSample): Drawing
   };
 }
 
+function isFailCard(card: { id: string; tone?: "fail" | "note" }) {
+  return (card.tone ?? (card.id === "verdict" ? "note" : "fail")) === "fail";
+}
+
 function cardsToGeometry(placed: PlacedCard[]): GeomEntity[] {
   const out: GeomEntity[] = [];
   for (const { card, rect } of placed) {
-    const fail = card.id !== "verdict";
+    const fail = isFailCard(card);
     out.push({
       kind: "polyline",
       layer: fail ? "COUNCIL_FIXES" : "COUNCIL_CHECK",

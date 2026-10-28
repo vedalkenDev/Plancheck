@@ -2,7 +2,13 @@
 
 import { FileUp, Maximize2, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { ChangeList, PassedList, ReviewTitle } from "@/components/check-panels";
+import {
+  ChangeList,
+  CorrectionList,
+  CorrectionSkipList,
+  PassedList,
+  ReviewTitle,
+} from "@/components/check-panels";
 import { DrawingPreview } from "@/components/DrawingPreview";
 import { PdfPreview } from "@/components/PdfPreview";
 import { ReviewDock } from "@/components/ReviewDock";
@@ -18,6 +24,9 @@ import type { DrawingExtract } from "@/lib/cad/extract";
 import { DISCLAIMER, ENGINE_NOTE, auditToReport, downloadBlob } from "@/lib/checklist";
 import { extractPdf, type ExtractProgress } from "@/lib/pdf/extract";
 import { stampPdf } from "@/lib/pdf/stamp";
+import { cardsFromCorrections, correctionsFromAudit } from "@/lib/sans/correct";
+
+type AppMode = "inspect" | "correct";
 
 type PlancheckAppProps = {
   samples: SampleDrawing[];
@@ -65,6 +74,9 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
   const [reading, setReading] = useState(false);
   const [progress, setProgress] = useState<ExtractProgress | null>(null);
   const [done, setDone] = useState<Record<string, boolean>>({});
+  const [mode, setMode] = useState<AppMode>("inspect");
+  const [picked, setPicked] = useState<Record<string, boolean>>({});
+  const [correctedBytes, setCorrectedBytes] = useState<ArrayBuffer | null>(null);
   const runId = useRef(0);
 
   function adoptPdf(bytes: ArrayBuffer | null) {
@@ -204,6 +216,46 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
     return auditFromDrawing(drawingName, extract);
   }, [extract, drawingName]);
 
+  const plan = useMemo(
+    () => (audit ? correctionsFromAudit(audit) : { add: [], skip: [] }),
+    [audit],
+  );
+
+  useEffect(() => {
+    setPicked(Object.fromEntries(plan.add.map((row) => [row.id, true])));
+  }, [plan]);
+
+  const selectedNotes = useMemo(
+    () => new Set(plan.add.filter((row) => picked[row.id] !== false).map((row) => row.id)),
+    [plan, picked],
+  );
+
+  const correctionCards = useMemo(
+    () => (audit ? cardsFromCorrections(audit, selectedNotes) : []),
+    [audit, selectedNotes],
+  );
+
+  useEffect(() => {
+    if (mode !== "correct" || !pdfBytes || !audit || !extract) {
+      setCorrectedBytes(null);
+      return;
+    }
+    let cancelled = false;
+    void stampPdf(pdfBytes, audit, extract, {
+      kind: "correct",
+      cards: correctionCards,
+    }).then((bytes) => {
+      if (!cancelled) {
+        const copy = new ArrayBuffer(bytes.byteLength);
+        new Uint8Array(copy).set(bytes);
+        setCorrectedBytes(copy);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, pdfBytes, audit, extract, correctionCards]);
+
   const viewed = useMemo(() => {
     if (!extract || !audit) {
       return null;
@@ -228,8 +280,12 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
       pageWidth: sheet.width ?? extract.pageWidth,
       pageHeight: sheet.height ?? extract.pageHeight,
     };
-    return { extract: stampAudit(preview, audit), audit, sheets, index };
-  }, [extract, audit, sheetIndex]);
+    const stamped =
+      mode === "correct"
+        ? stampAudit(preview, audit, correctionCards)
+        : stampAudit(preview, audit);
+    return { extract: stamped, audit, sheets, index };
+  }, [extract, audit, sheetIndex, mode, correctionCards]);
 
   return (
     <div className="flex min-h-svh flex-col bg-background lg:h-svh lg:overflow-hidden">
@@ -269,7 +325,7 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
           {viewed && !reading ? (
             <DrawingPane
               extract={viewed.extract}
-              pdfBytes={pdfBytes}
+              pdfBytes={mode === "correct" && correctedBytes ? correctedBytes : pdfBytes}
               label={viewed.audit.label}
               audit={viewed.audit}
               sheets={viewed.sheets}
@@ -279,6 +335,11 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
               }}
               done={done}
               setDone={setDone}
+              mode={mode}
+              writing={mode === "correct" && Boolean(pdfBytes) && !correctedBytes}
+              plan={plan}
+              picked={picked}
+              setPicked={setPicked}
               onReplace={reset}
             />
           ) : reading ? (
@@ -343,10 +404,15 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
             ) : viewed ? (
               <Analysis
                 audit={viewed.audit}
-                extract={viewed.extract}
+                extract={extract}
                 pdfBytes={pdfBytes}
                 done={done}
                 setDone={setDone}
+                mode={mode}
+                onMode={setMode}
+                plan={plan}
+                picked={picked}
+                setPicked={setPicked}
               />
             ) : (
               <EmptyState />
@@ -368,6 +434,11 @@ function DrawingPane({
   onSheet,
   done,
   setDone,
+  mode,
+  writing,
+  plan,
+  picked,
+  setPicked,
   onReplace,
 }: {
   extract: DrawingExtract;
@@ -379,6 +450,11 @@ function DrawingPane({
   onSheet: (index: number) => void;
   done: Record<string, boolean>;
   setDone: (value: Record<string, boolean>) => void;
+  mode: AppMode;
+  writing: boolean;
+  plan: ReturnType<typeof correctionsFromAudit>;
+  picked: Record<string, boolean>;
+  setPicked: (value: Record<string, boolean>) => void;
   onReplace: () => void;
 }) {
   const [fullscreen, setFullscreen] = useState(false);
@@ -387,7 +463,14 @@ function DrawingPane({
     <>
       <div className="flex min-h-0 flex-1 flex-col gap-3 rounded-xl border-2 border-border bg-card p-4">
         <div className="flex items-center justify-between gap-2">
-          <p className="truncate text-sm font-medium">{label}</p>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium">{label}</p>
+            {mode === "correct" ? (
+              <p className="truncate text-xs text-muted-foreground">
+                {writing ? "Writing SANS notes onto the drawing…" : "Corrector notes on empty paper"}
+              </p>
+            ) : null}
+          </div>
           <div className="flex shrink-0 items-center gap-1">
             {pdfBytes ? (
               <Button
@@ -438,6 +521,10 @@ function DrawingPane({
           onSheet={onSheet}
           done={done}
           setDone={setDone}
+          mode={mode}
+          plan={plan}
+          picked={picked}
+          setPicked={setPicked}
           onClose={() => setFullscreen(false)}
         />
       ) : null}
@@ -455,6 +542,10 @@ function FullscreenDrawing({
   onSheet,
   done,
   setDone,
+  mode,
+  plan,
+  picked,
+  setPicked,
   onClose,
 }: {
   extract: DrawingExtract;
@@ -466,6 +557,10 @@ function FullscreenDrawing({
   onSheet: (index: number) => void;
   done: Record<string, boolean>;
   setDone: (value: Record<string, boolean>) => void;
+  mode: AppMode;
+  plan: ReturnType<typeof correctionsFromAudit>;
+  picked: Record<string, boolean>;
+  setPicked: (value: Record<string, boolean>) => void;
   onClose: () => void;
 }) {
   const shellRef = useRef<HTMLDivElement>(null);
@@ -559,7 +654,15 @@ function FullscreenDrawing({
             onToggleFullscreen={onClose}
           />
         )}
-        <ReviewDock audit={audit} done={done} setDone={setDone} />
+        <ReviewDock
+          audit={audit}
+          done={done}
+          setDone={setDone}
+          mode={mode}
+          plan={plan}
+          picked={picked}
+          setPicked={setPicked}
+        />
       </div>
     </div>
   );
@@ -625,22 +728,67 @@ function ReadProgress({
   );
 }
 
+function ModeSwitch({
+  mode,
+  onMode,
+}: {
+  mode: AppMode;
+  onMode: (mode: AppMode) => void;
+}) {
+  return (
+    <div className="flex w-fit gap-0.5 rounded-lg border p-0.5" role="group" aria-label="Plancheck mode">
+      <Button
+        type="button"
+        size="sm"
+        variant={mode === "inspect" ? "secondary" : "ghost"}
+        aria-pressed={mode === "inspect"}
+        onClick={() => onMode("inspect")}
+      >
+        Inspect
+      </Button>
+      <Button
+        type="button"
+        size="sm"
+        variant={mode === "correct" ? "secondary" : "ghost"}
+        aria-pressed={mode === "correct"}
+        onClick={() => onMode("correct")}
+      >
+        Correct
+      </Button>
+    </div>
+  );
+}
+
 function Analysis({
   audit,
   extract,
   pdfBytes,
   done,
   setDone,
+  mode,
+  onMode,
+  plan,
+  picked,
+  setPicked,
 }: {
   audit: AuditSample;
   extract: DrawingExtract | null;
   pdfBytes: ArrayBuffer | null;
   done: Record<string, boolean>;
   setDone: (value: Record<string, boolean>) => void;
+  mode: AppMode;
+  onMode: (mode: AppMode) => void;
+  plan: ReturnType<typeof correctionsFromAudit>;
+  picked: Record<string, boolean>;
+  setPicked: (value: Record<string, boolean>) => void;
 }) {
   const remaining = useMemo(
     () => audit.failed.filter((row) => !done[row.id]).length,
     [audit.failed, done],
+  );
+  const selected = useMemo(
+    () => new Set(plan.add.filter((row) => picked[row.id] !== false).map((row) => row.id)),
+    [plan, picked],
   );
 
   function downloadChecklist() {
@@ -655,9 +803,18 @@ function Analysis({
     if (!pdfBytes) {
       return;
     }
-    const annotated = await stampPdf(pdfBytes, audit, extract ?? undefined);
+    const annotated = await stampPdf(
+      pdfBytes,
+      audit,
+      extract ?? undefined,
+      mode === "correct"
+        ? { kind: "correct", cards: cardsFromCorrections(audit, selected) }
+        : { kind: "inspect" },
+    );
     downloadBlob(
-      `${audit.fileStem}-annotated.pdf`,
+      mode === "correct"
+        ? `${audit.fileStem}-corrected.pdf`
+        : `${audit.fileStem}-annotated.pdf`,
       annotated,
       "application/pdf",
     );
@@ -676,6 +833,7 @@ function Analysis({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <ModeSwitch mode={mode} onMode={onMode} />
           <Badge variant="outline">
             {audit.occupancy} · {audit.occupancyNote}
           </Badge>
@@ -689,9 +847,26 @@ function Analysis({
         <p className="text-sm text-muted-foreground">{audit.warnings[0]}</p>
       ) : null}
 
-      <p className="text-xs text-muted-foreground">{ENGINE_NOTE}</p>
+      <p className="text-xs text-muted-foreground">
+        {mode === "correct"
+          ? "Corrector writes the missing SANS note into a block on empty paper. Measured sizes, signatures, and packs still need the architect."
+          : ENGINE_NOTE}
+      </p>
 
-      {audit.failed.length ? (
+      {mode === "correct" ? (
+        <>
+          <section className="space-y-3">
+            <h3 className="font-heading text-base font-medium">Notes to add</h3>
+            <CorrectionList rows={plan.add} selected={picked} setSelected={setPicked} />
+          </section>
+          {plan.skip.length ? (
+            <section className="space-y-3">
+              <h3 className="font-heading text-base font-medium">Still needs the architect</h3>
+              <CorrectionSkipList rows={plan.skip} />
+            </section>
+          ) : null}
+        </>
+      ) : audit.failed.length ? (
         <section className="space-y-3">
           <ReviewTitle
             id="changes"
@@ -721,7 +896,7 @@ function Analysis({
           onClick={() => void downloadDrawing()}
           disabled={!pdfBytes}
         >
-          Download annotated PDF
+          {mode === "correct" ? "Download corrected PDF" : "Download annotated PDF"}
         </Button>
         <Button type="button" variant="outline" onClick={downloadChecklist}>
           Download checklist
