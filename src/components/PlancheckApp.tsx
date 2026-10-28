@@ -76,7 +76,9 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
   const [done, setDone] = useState<Record<string, boolean>>({});
   const [mode, setMode] = useState<AppMode>("inspect");
   const [picked, setPicked] = useState<Record<string, boolean>>({});
-  const [correctedBytes, setCorrectedBytes] = useState<ArrayBuffer | null>(null);
+  const [corrected, setCorrected] = useState<{ key: string; bytes: ArrayBuffer } | null>(
+    null,
+  );
   const runId = useRef(0);
 
   function adoptPdf(bytes: ArrayBuffer | null) {
@@ -85,6 +87,7 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
 
   function resetChecks() {
     setDone({});
+    setPicked({});
   }
 
   function reset() {
@@ -221,10 +224,6 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
     [audit],
   );
 
-  useEffect(() => {
-    setPicked(Object.fromEntries(plan.add.map((row) => [row.id, true])));
-  }, [plan]);
-
   const selectedNotes = useMemo(
     () => new Set(plan.add.filter((row) => picked[row.id] !== false).map((row) => row.id)),
     [plan, picked],
@@ -235,26 +234,36 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
     [audit, selectedNotes],
   );
 
+  const stampKey =
+    mode === "correct" && pdfBytes && audit
+      ? `${audit.id}:${[...selectedNotes].sort().join(",")}`
+      : "";
+
   useEffect(() => {
-    if (mode !== "correct" || !pdfBytes || !audit || !extract) {
-      setCorrectedBytes(null);
+    if (!stampKey || !pdfBytes || !audit || !extract) {
       return;
     }
+    const key = stampKey;
     let cancelled = false;
     void stampPdf(pdfBytes, audit, extract, {
       kind: "correct",
       cards: correctionCards,
     }).then((bytes) => {
-      if (!cancelled) {
-        const copy = new ArrayBuffer(bytes.byteLength);
-        new Uint8Array(copy).set(bytes);
-        setCorrectedBytes(copy);
+      if (cancelled) {
+        return;
       }
+      const copy = new ArrayBuffer(bytes.byteLength);
+      new Uint8Array(copy).set(bytes);
+      setCorrected({ key, bytes: copy });
     });
     return () => {
       cancelled = true;
     };
-  }, [mode, pdfBytes, audit, extract, correctionCards]);
+  }, [stampKey, pdfBytes, audit, extract, correctionCards]);
+
+  const previewBytes =
+    mode === "correct" && corrected?.key === stampKey ? corrected.bytes : pdfBytes;
+  const writingNotes = mode === "correct" && Boolean(pdfBytes) && corrected?.key !== stampKey;
 
   const viewed = useMemo(() => {
     if (!extract || !audit) {
@@ -325,7 +334,7 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
           {viewed && !reading ? (
             <DrawingPane
               extract={viewed.extract}
-              pdfBytes={mode === "correct" && correctedBytes ? correctedBytes : pdfBytes}
+              pdfBytes={previewBytes}
               label={viewed.audit.label}
               audit={viewed.audit}
               sheets={viewed.sheets}
@@ -336,7 +345,7 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
               done={done}
               setDone={setDone}
               mode={mode}
-              writing={mode === "correct" && Boolean(pdfBytes) && !correctedBytes}
+              writing={writingNotes}
               plan={plan}
               picked={picked}
               setPicked={setPicked}
