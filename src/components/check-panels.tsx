@@ -134,7 +134,8 @@ export function ChangeList({
               {row.part} · {row.check}
             </p>
             <p className="text-xs text-muted-foreground">{howLabel(row)}</p>
-            <p className="text-sm text-muted-foreground">{row.adjust}</p>
+            <p className="text-sm text-muted-foreground">{row.detail}</p>
+            <p className="text-sm">{row.adjust}</p>
           </div>
         </li>
       ))}

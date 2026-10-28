@@ -1,23 +1,17 @@
 "use client";
 
-import { Maximize2, Minimize2, Scaling } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { useMemo } from "react";
+import { SheetStage } from "@/components/sheet-camera";
 import type { DrawingExtract, GeomEntity, Point } from "@/lib/cad/extract";
-import {
-  cameraViewBox,
-  clampZoom,
-  fitCamera,
-  panCamera,
-  resizeCamera,
-  zoomCamera,
-  type Camera,
-} from "@/lib/cad/camera";
-import { arcPath, geometryBounds, wrapText } from "@/lib/cad/preview";
+import { geometryBounds } from "@/lib/cad/preview";
+import { arcPath, wrapText } from "@/lib/cad/preview";
 
 type DrawingPreviewProps = {
   extract: DrawingExtract;
   label: string;
+  page?: number;
+  pageCount?: number;
+  onPage?: (page: number) => void;
   fullscreen?: boolean;
   onToggleFullscreen?: () => void;
 };
@@ -25,6 +19,9 @@ type DrawingPreviewProps = {
 export function DrawingPreview({
   extract,
   label,
+  page,
+  pageCount,
+  onPage,
   fullscreen = false,
   onToggleFullscreen,
 }: DrawingPreviewProps) {
@@ -39,115 +36,6 @@ export function DrawingPreview({
     }
     return geometryBounds(extract.geometry);
   }, [extract.geometry, extract.pageHeight, extract.pageWidth]);
-  const hostRef = useRef<HTMLDivElement>(null);
-  const svgRef = useRef<SVGSVGElement>(null);
-  const viewSizeRef = useRef({ w: 320, h: 480 });
-  const dragRef = useRef<{ pointerId: number; x: number; y: number; camera: Camera } | null>(
-    null,
-  );
-  const [camera, setCamera] = useState<Camera | null>(() =>
-    bounds ? fitCamera(bounds, 320, 480) : null,
-  );
-  const cameraRef = useRef<Camera | null>(camera);
-  const [dragging, setDragging] = useState(false);
-  const boundsRef = useRef(bounds);
-
-  useEffect(() => {
-    boundsRef.current = bounds;
-  }, [bounds]);
-
-  const apply = useCallback((next: Camera, commit = false) => {
-    cameraRef.current = next;
-    svgRef.current?.setAttribute("viewBox", cameraViewBox(next));
-    if (commit) {
-      setCamera(next);
-    }
-  }, []);
-
-  const fitToHost = useCallback(
-    (commit = true) => {
-      const frame = boundsRef.current;
-      const host = hostRef.current;
-      if (!frame || !host) {
-        return;
-      }
-      const rect = host.getBoundingClientRect();
-      if (rect.width < 2 || rect.height < 2) {
-        return;
-      }
-      viewSizeRef.current = { w: rect.width, h: rect.height };
-      apply(fitCamera(frame, rect.width, rect.height), commit);
-    },
-    [apply],
-  );
-
-  useLayoutEffect(() => {
-    const live = cameraRef.current;
-    if (live && svgRef.current) {
-      svgRef.current.setAttribute("viewBox", cameraViewBox(live));
-    }
-  });
-
-  useEffect(() => {
-    let inner = 0;
-    const outer = requestAnimationFrame(() => {
-      inner = requestAnimationFrame(() => fitToHost());
-    });
-    return () => {
-      cancelAnimationFrame(outer);
-      cancelAnimationFrame(inner);
-    };
-  }, [fitToHost, fullscreen, label]);
-
-  useEffect(() => {
-    const host = hostRef.current;
-    if (!host) {
-      return;
-    }
-    const observer = new ResizeObserver(() => {
-      const rect = host.getBoundingClientRect();
-      const previous = viewSizeRef.current;
-      const current = cameraRef.current;
-      if (!current || rect.width < 2 || rect.height < 2) {
-        return;
-      }
-      if (Math.abs(rect.width - previous.w) < 1 && Math.abs(rect.height - previous.h) < 1) {
-        return;
-      }
-      apply(resizeCamera(current, previous.w, rect.width, rect.height));
-      viewSizeRef.current = { w: rect.width, h: rect.height };
-    });
-    observer.observe(host);
-    return () => observer.disconnect();
-  }, [apply]);
-
-  useEffect(() => {
-    const host = hostRef.current;
-    if (!host) {
-      return;
-    }
-    function onWheel(event: WheelEvent) {
-      const current = cameraRef.current;
-      const frame = boundsRef.current;
-      if (!current || !frame || !host) {
-        return;
-      }
-      event.preventDefault();
-      const rect = host.getBoundingClientRect();
-      const factor = Math.exp(-event.deltaY * 0.0015);
-      const next = zoomCamera(
-        current,
-        factor,
-        event.clientX - rect.left,
-        event.clientY - rect.top,
-        rect.width,
-        rect.height,
-      );
-      apply(clampZoom(current, frame, next));
-    }
-    host.addEventListener("wheel", onWheel, { passive: false });
-    return () => host.removeEventListener("wheel", onWheel);
-  }, [apply]);
 
   const scene = useMemo(() => {
     if (!bounds) {
@@ -169,7 +57,7 @@ export function DrawingPreview({
     );
   }, [bounds, extract.geometry]);
 
-  if (!bounds || !camera) {
+  if (!bounds) {
     return (
       <div className="flex h-full min-h-64 flex-col justify-between rounded-lg bg-muted/30 p-4 font-mono text-xs text-muted-foreground">
         <p className="text-foreground">{label}</p>
@@ -187,92 +75,19 @@ export function DrawingPreview({
     );
   }
 
-  function onPointerDown(event: React.PointerEvent<SVGSVGElement>) {
-    if (event.button !== 0 || !cameraRef.current) {
-      return;
-    }
-    event.currentTarget.setPointerCapture(event.pointerId);
-    dragRef.current = {
-      pointerId: event.pointerId,
-      x: event.clientX,
-      y: event.clientY,
-      camera: cameraRef.current,
-    };
-    setDragging(true);
-  }
-
-  function onPointerMove(event: React.PointerEvent<SVGSVGElement>) {
-    const drag = dragRef.current;
-    const host = hostRef.current;
-    if (!drag || drag.pointerId !== event.pointerId || !host) {
-      return;
-    }
-    const rect = host.getBoundingClientRect();
-    apply(
-      panCamera(
-        drag.camera,
-        event.clientX - drag.x,
-        event.clientY - drag.y,
-        rect.width,
-        rect.height,
-      ),
-    );
-  }
-
-  function endDrag(event: React.PointerEvent<SVGSVGElement>) {
-    const drag = dragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) {
-      return;
-    }
-    dragRef.current = null;
-    setDragging(false);
-    if (cameraRef.current) {
-      setCamera(cameraRef.current);
-    }
-  }
-
   return (
-    <div
-      ref={hostRef}
-      className="relative h-full min-h-64 w-full overflow-hidden bg-white"
+    <SheetStage
+      label={label}
+      frame={bounds}
+      resetKey={`${label}-${fullscreen ? "full" : "pane"}-${page ?? 1}`}
+      page={page}
+      pageCount={pageCount}
+      onPage={onPage}
+      fullscreen={fullscreen}
+      onToggleFullscreen={onToggleFullscreen}
     >
-      <svg
-        ref={svgRef}
-        viewBox={cameraViewBox(camera)}
-        className={`absolute inset-0 h-full w-full touch-none text-neutral-950 select-none ${dragging ? "cursor-grabbing" : "cursor-grab"}`}
-        role="application"
-        aria-label={`${label}. Drag to move the drawing. Scroll to zoom.`}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
-        onDoubleClick={() => fitToHost()}
-      >
-        {scene}
-      </svg>
-      <div className="absolute top-2 left-2 z-10 flex gap-1">
-        <Button
-          type="button"
-          variant="secondary"
-          size="icon-sm"
-          aria-label="Fit drawing"
-          onClick={() => fitToHost()}
-        >
-          <Scaling />
-        </Button>
-        {onToggleFullscreen ? (
-          <Button
-            type="button"
-            variant="secondary"
-            size="icon-sm"
-            aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
-            onClick={onToggleFullscreen}
-          >
-            {fullscreen ? <Minimize2 /> : <Maximize2 />}
-          </Button>
-        ) : null}
-      </div>
-    </div>
+      {scene}
+    </SheetStage>
   );
 }
 

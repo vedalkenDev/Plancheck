@@ -1,26 +1,17 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, FileUp, Maximize2, X } from "lucide-react";
+import { FileUp, Maximize2, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { ChangeList, ReviewTitle } from "@/components/check-panels";
+import { ChangeList, PassedList, ReviewTitle } from "@/components/check-panels";
 import { DrawingPreview } from "@/components/DrawingPreview";
-import { PdfPageView } from "@/components/PdfPageView";
+import { PdfPreview } from "@/components/PdfPreview";
 import { ReviewDock } from "@/components/ReviewDock";
 import { SansBook } from "@/components/SansBook";
 import { ScanLoader } from "@/components/scanner/figure";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import type { AuditSample, SampleDrawing } from "@/data/types";
 import { auditFromDrawing, stampAudit } from "@/lib/cad";
 import type { DrawingExtract } from "@/lib/cad/extract";
@@ -63,11 +54,6 @@ function etaText(progress: ExtractProgress | null) {
   return `About ${minutes} min left`;
 }
 
-function howLabel(row: { clause?: string; how?: string }) {
-  const clause = row.clause ?? "SANS 10400";
-  return row.how === "measured" ? `${clause} · measured` : `${clause} · notes`;
-}
-
 export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -75,8 +61,6 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
   const [drawingName, setDrawingName] = useState("drawing");
   const [sheetIndex, setSheetIndex] = useState(0);
   const [pdfBytes, setPdfBytes] = useState<ArrayBuffer | null>(null);
-  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
-  const pdfUrlRef = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
   const [progress, setProgress] = useState<ExtractProgress | null>(null);
@@ -84,15 +68,7 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
   const runId = useRef(0);
 
   function adoptPdf(bytes: ArrayBuffer | null) {
-    if (pdfUrlRef.current) {
-      URL.revokeObjectURL(pdfUrlRef.current);
-      pdfUrlRef.current = null;
-    }
-    if (bytes) {
-      pdfUrlRef.current = URL.createObjectURL(new Blob([bytes.slice(0)], { type: "application/pdf" }));
-    }
     setPdfBytes(bytes);
-    setPdfUrl(pdfUrlRef.current);
   }
 
   function resetChecks() {
@@ -112,15 +88,6 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
       inputRef.current.value = "";
     }
   }
-
-  useEffect(
-    () => () => {
-      if (pdfUrlRef.current) {
-        URL.revokeObjectURL(pdfUrlRef.current);
-      }
-    },
-    [],
-  );
 
   async function inspect(file: File) {
     if (!DRAWING_NAME.test(file.name)) {
@@ -303,7 +270,6 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
             <DrawingPane
               extract={viewed.extract}
               pdfBytes={pdfBytes}
-              pdfUrl={pdfUrl}
               label={viewed.audit.label}
               audit={viewed.audit}
               sheets={viewed.sheets}
@@ -395,7 +361,6 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
 function DrawingPane({
   extract,
   pdfBytes,
-  pdfUrl,
   label,
   audit,
   sheets,
@@ -407,7 +372,6 @@ function DrawingPane({
 }: {
   extract: DrawingExtract;
   pdfBytes: ArrayBuffer | null;
-  pdfUrl: string | null;
   label: string;
   audit: AuditSample | null;
   sheets: { name: string }[];
@@ -441,14 +405,23 @@ function DrawingPane({
             </Button>
           </div>
         </div>
-        <SheetSwitcher sheets={sheets} sheetIndex={sheetIndex} onSheet={onSheet} />
-        <div className="relative min-h-0 flex-1 overflow-hidden rounded-lg border">
-          {pdfBytes && pdfUrl ? (
-            <PdfPageView bytes={pdfBytes} url={pdfUrl} label={label} page={sheetIndex + 1} />
+        <div className="min-h-0 flex-1 overflow-hidden rounded-lg border">
+          {pdfBytes ? (
+            <PdfPreview
+              bytes={pdfBytes}
+              label={label}
+              page={sheetIndex + 1}
+              pageCount={sheets.length}
+              onPage={(next) => onSheet(next - 1)}
+              onToggleFullscreen={() => setFullscreen(true)}
+            />
           ) : (
             <DrawingPreview
               extract={extract}
               label={label}
+              page={sheetIndex + 1}
+              pageCount={sheets.length}
+              onPage={(next) => onSheet(next - 1)}
               onToggleFullscreen={() => setFullscreen(true)}
             />
           )}
@@ -458,7 +431,6 @@ function DrawingPane({
         <FullscreenDrawing
           extract={extract}
           pdfBytes={pdfBytes}
-          pdfUrl={pdfUrl}
           label={label}
           audit={audit}
           sheets={sheets}
@@ -473,64 +445,9 @@ function DrawingPane({
   );
 }
 
-function SheetSwitcher({
-  sheets,
-  sheetIndex,
-  onSheet,
-}: {
-  sheets: { name: string }[];
-  sheetIndex: number;
-  onSheet: (index: number) => void;
-}) {
-  if (sheets.length < 2) {
-    return null;
-  }
-  const last = sheets.length - 1;
-  return (
-    <div className="flex items-center gap-2">
-      <Button
-        type="button"
-        variant="outline"
-        size="icon-sm"
-        aria-label="Previous sheet"
-        disabled={sheetIndex <= 0}
-        onClick={() => onSheet(sheetIndex - 1)}
-      >
-        <ChevronLeft />
-      </Button>
-      <p className="shrink-0 text-sm tabular-nums">
-        Sheet {sheetIndex + 1} of {sheets.length}
-      </p>
-      <Button
-        type="button"
-        variant="outline"
-        size="icon-sm"
-        aria-label="Next sheet"
-        disabled={sheetIndex >= last}
-        onClick={() => onSheet(sheetIndex + 1)}
-      >
-        <ChevronRight />
-      </Button>
-      <select
-        aria-label="Sheets"
-        className="h-7 min-w-0 flex-1 rounded-lg border border-input bg-background px-2 text-sm"
-        value={sheetIndex}
-        onChange={(event) => onSheet(Number(event.target.value))}
-      >
-        {sheets.map((sheet, index) => (
-          <option key={`${sheet.name}-${index}`} value={index}>
-            {sheet.name}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
 function FullscreenDrawing({
   extract,
   pdfBytes,
-  pdfUrl,
   label,
   audit,
   sheets,
@@ -542,7 +459,6 @@ function FullscreenDrawing({
 }: {
   extract: DrawingExtract;
   pdfBytes: ArrayBuffer | null;
-  pdfUrl: string | null;
   label: string;
   audit: AuditSample | null;
   sheets: { name: string }[];
@@ -615,7 +531,6 @@ function FullscreenDrawing({
     <div ref={shellRef} className="fixed inset-0 z-50 flex flex-col bg-background">
       <div className="flex shrink-0 items-center gap-3 border-b px-3 py-2">
         <p className="max-w-xs truncate text-sm font-medium">{label}</p>
-        <SheetSwitcher sheets={sheets} sheetIndex={sheetIndex} onSheet={onSheet} />
         <div className="min-w-0 flex-1" />
         <Button type="button" variant="outline" size="sm" onClick={onClose}>
           <X />
@@ -623,12 +538,23 @@ function FullscreenDrawing({
         </Button>
       </div>
       <div className="relative min-h-0 flex-1">
-        {pdfBytes && pdfUrl ? (
-          <PdfPageView bytes={pdfBytes} url={pdfUrl} label={label} page={sheetIndex + 1} />
+        {pdfBytes ? (
+          <PdfPreview
+            bytes={pdfBytes}
+            label={label}
+            page={sheetIndex + 1}
+            pageCount={sheets.length}
+            onPage={(next) => onSheet(next - 1)}
+            fullscreen
+            onToggleFullscreen={onClose}
+          />
         ) : (
           <DrawingPreview
             extract={extract}
             label={label}
+            page={sheetIndex + 1}
+            pageCount={sheets.length}
+            onPage={(next) => onSheet(next - 1)}
             fullscreen
             onToggleFullscreen={onClose}
           />
@@ -738,13 +664,10 @@ function Analysis({
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="max-w-3xl space-y-10">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
-          <p className="text-xs tracking-wide text-muted-foreground uppercase">
-            Project
-          </p>
-          <h2 className="font-heading text-lg font-medium md:text-xl">
+          <h2 className="font-heading text-lg font-medium text-balance md:text-xl">
             {audit.project}
           </h2>
           <p className="text-sm text-muted-foreground">
@@ -768,105 +691,28 @@ function Analysis({
 
       <p className="text-xs text-muted-foreground">{ENGINE_NOTE}</p>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Card>
-          <CardHeader className="border-b">
-            <ReviewTitle id="passed" />
-          </CardHeader>
-          <CardContent>
-            {audit.passed.length ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Part</TableHead>
-                    <TableHead>Check</TableHead>
-                    <TableHead>Detail</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {audit.passed.map((row) => (
-                    <TableRow key={row.id}>
-                      <TableCell className="font-mono text-xs whitespace-normal">
-                        {row.part}
-                      </TableCell>
-                      <TableCell className="whitespace-normal">
-                        {row.check}
-                        <span className="mt-0.5 block text-xs text-muted-foreground">
-                          {howLabel(row)}
-                        </span>
-                      </TableCell>
-                      <TableCell className="whitespace-normal text-muted-foreground">
-                        {row.detail}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : (
-              <p className="text-sm text-muted-foreground">No passing checks yet.</p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="border-b">
-            <ReviewTitle id="failed" />
-          </CardHeader>
-          <CardContent>
-            {audit.failed.length ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Part</TableHead>
-                    <TableHead>Check</TableHead>
-                    <TableHead>Detail</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {audit.failed.map((row) => (
-                    <TableRow key={row.id}>
-                      <TableCell className="font-mono text-xs whitespace-normal">
-                        {row.part}
-                      </TableCell>
-                      <TableCell className="whitespace-normal">
-                        {row.check}
-                        <span className="mt-0.5 block text-xs text-muted-foreground">
-                          {howLabel(row)}
-                        </span>
-                      </TableCell>
-                      <TableCell className="whitespace-normal text-muted-foreground">
-                        {row.detail}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Nothing failed on the checks we could read.
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader className="border-b">
+      {audit.failed.length ? (
+        <section className="space-y-3">
           <ReviewTitle
             id="changes"
             extra={
-              audit.failed.length ? (
-                <span className="text-sm font-normal text-muted-foreground">
-                  {remaining} left
-                </span>
-              ) : null
+              <span className="text-sm font-normal text-muted-foreground">
+                {remaining} left
+              </span>
             }
           />
-        </CardHeader>
-        <CardContent>
           <ChangeList rows={audit.failed} done={done} setDone={setDone} />
-        </CardContent>
-      </Card>
+        </section>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          Nothing failed on the checks we could read.
+        </p>
+      )}
+
+      <section className="space-y-3">
+        <ReviewTitle id="passed" />
+        <PassedList rows={audit.passed} />
+      </section>
 
       <div className="flex flex-wrap gap-2">
         <Button
