@@ -1,4 +1,4 @@
-import type { FailedCheck, PassedCheck } from "@/data/types";
+import type { CheckHow, FailedCheck, PassedCheck } from "@/data/types";
 import type { DrawingExtract } from "@/lib/cad/extract";
 import {
   describeCut,
@@ -31,11 +31,17 @@ export type AuditContext = {
 
 type RuleResult =
   | { status: "skip" }
-  | { status: "pass"; detail: string; evidence?: FailedCheck["evidence"] }
+  | {
+      status: "pass";
+      detail: string;
+      how?: CheckHow;
+      evidence?: FailedCheck["evidence"];
+    }
   | {
       status: "fail";
       detail: string;
       adjust: string;
+      how?: CheckHow;
       evidence?: FailedCheck["evidence"];
     };
 
@@ -44,6 +50,28 @@ type Rule = {
   part: string;
   check: string;
   run: (ctx: AuditContext) => RuleResult;
+};
+
+/** Drawing-rule index. Not the book. */
+const CLAUSE: Record<string, string> = {
+  "readable-text": "SANS 10400-A",
+  occupancy: "SANS 10400-A",
+  address: "Application",
+  titleblocks: "SANS 10400-A",
+  "xa-fenestration": "SANS 10400-XA 4.4.4",
+  "window-schedule": "SANS 10400-N / A7",
+  "part-r": "SANS 10400-R",
+  "part-m": "SANS 10400-M",
+  "part-d": "SANS 10400-D",
+  "part-k": "SANS 10400-K",
+  "part-s": "SANS 10400-S",
+  "part-t": "SANS 10400-T",
+  "part-o": "SANS 10400-XA",
+  parking: "Zoning scheme",
+  coverage: "Zoning scheme",
+  "site-area": "SANS 10400-A",
+  signatures: "Form 1 / A19",
+  "eng-packs": "Form 1 / A19",
 };
 
 export const SANS_RULES: Rule[] = [
@@ -404,6 +432,7 @@ function partNWindows(ctx: AuditContext): RuleResult {
     return {
       status: "pass",
       detail: describePanes(reading),
+      how: "measured",
       evidence,
     };
   }
@@ -414,6 +443,7 @@ function partNWindows(ctx: AuditContext): RuleResult {
       status: "fail",
       detail: `${span} overall sizes drawn, pane elevations missing`,
       adjust: `Add each pane width × height on the ${span} type elevation — overall size and every pane (fixed, openable, casement) in free space on the sheet.`,
+      how: "measured",
       evidence,
     };
   }
@@ -424,6 +454,7 @@ function partNWindows(ctx: AuditContext): RuleResult {
       detail: "Pane sizes found, overall type sizes missing",
       adjust:
         "Add the overall width × height on each window type elevation, next to the pane sizes.",
+      how: "measured",
       evidence,
     };
   }
@@ -473,12 +504,13 @@ function partMStairs(ctx: AuditContext): RuleResult {
       );
     }
     if (!cuts.length) {
-      return { status: "pass", detail, evidence };
+      return { status: "pass", detail, how: "measured", evidence };
     }
     return {
       status: "fail",
       detail: `${detail} outside Part M (${MAX_RISER_MM} mm max riser, ${MIN_GOING_MM} mm min going)`,
       adjust: `Change the stair: ${cuts.join(" and ")}.`,
+      how: "measured",
       evidence,
     };
   }
@@ -528,6 +560,7 @@ function xaFenestration(ctx: AuditContext): RuleResult {
       return {
         status: "pass",
         detail: `${over.map((row) => `${row.storey} ${showPercent(row)}%`).join(", ")} — SANS 204 noted`,
+        how: reading.measured ? "measured" : undefined,
         evidence,
       };
     }
@@ -544,6 +577,7 @@ function xaFenestration(ctx: AuditContext): RuleResult {
       status: "fail",
       detail: `${listing} exceed 15%. SANS 204 required.${measuredNote}`,
       adjust: xaAdjust(cuts, reading.measured, mismatched.length > 0),
+      how: reading.measured ? "measured" : undefined,
       evidence,
     };
   }
@@ -554,6 +588,7 @@ function xaFenestration(ctx: AuditContext): RuleResult {
       detail: `XA notes print ${printedList(mismatched)}; schedule measures ${measuredList(mismatched)}.`,
       adjust:
         "Correct the XA percentages on the sheet to the window-schedule measurement. Do not lodge a titleblock figure that disagrees with the schedule.",
+      how: "measured",
       evidence,
     };
   }
@@ -566,6 +601,7 @@ function xaFenestration(ctx: AuditContext): RuleResult {
         detail: `Window sizes measured (${reading.glazedM2.toFixed(2)} m² glazed) but nett floor per storey is missing`,
         adjust:
           "Add nett floor area per storey so Plancheck can finish XA 4.4.4 (glazed area ÷ nett floor). If a storey is over 15%, SANS 204 is required.",
+        how: "measured",
         evidence,
       };
     }
@@ -605,6 +641,7 @@ function xaFenestration(ctx: AuditContext): RuleResult {
           .map((row) => `${row.storey} ${showPercent(row)}%`)
           .join(", ")}${reading.measured ? " measured from the window schedule" : ""}`
       : "Noted on the drawing (≤15% path)",
+    how: reading.measured ? "measured" : undefined,
     evidence,
   };
 }
@@ -661,6 +698,8 @@ export function evaluateRules(ctx: AuditContext) {
         check: rule.check,
         detail: result.detail,
         status: "pass",
+        clause: CLAUSE[rule.id],
+        how: result.how ?? "notes",
         evidence: result.evidence,
       });
       continue;
@@ -672,6 +711,8 @@ export function evaluateRules(ctx: AuditContext) {
       detail: result.detail,
       status: "fail",
       adjust: result.adjust,
+      clause: CLAUSE[rule.id],
+      how: result.how ?? "notes",
       evidence: result.evidence,
     });
   }

@@ -70,6 +70,9 @@ export function SansBook() {
 
   return (
     <form onSubmit={(event) => void search(event)} className="space-y-3">
+      <p className="text-xs text-muted-foreground">
+        Search opens the SANS PDF. The checklist uses a drawing-rule index, not these headings.
+      </p>
       <div className="flex gap-2">
         <input
           value={query}

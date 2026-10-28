@@ -115,6 +115,8 @@ describe("audit uses measured fenestration", () => {
     );
     const xa = audit.failed.find((row) => row.id === "xa-fenestration");
     assert.ok(xa);
+    assert.equal(xa.how, "measured");
+    assert.equal(xa.clause, "SANS 10400-XA 4.4.4");
     assert.match(xa.detail, /18%/);
     assert.match(xa.detail, /24%/);
     assert.match(xa.detail, /10%/);
@@ -140,6 +142,8 @@ describe("audit uses measured fenestration", () => {
     );
     const xa = audit.failed.find((row) => row.id === "xa-fenestration");
     assert.ok(xa);
+    assert.equal(xa.how, "notes");
+    assert.equal(xa.clause, "SANS 10400-XA 4.4.4");
     assert.match(xa.detail, /16\.9%/);
     assert.match(xa.detail, /17\.1%/);
     assert.doesNotMatch(xa.detail, /Measured from the window schedule/);

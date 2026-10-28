@@ -5,7 +5,7 @@ import { PDFDocument } from "pdf-lib";
 import { auditFromDrawing } from "../cad/audit-from-drawing";
 import { extractDrawing } from "../cad/extract";
 import { geometryBounds } from "../cad/preview";
-import { extractPdf } from "./extract";
+import { extractPdf, nameSheet } from "./extract";
 import {
   marineDriveGlyphPdf,
   marineDriveNotesPdf,
@@ -197,6 +197,8 @@ describe("pdf council set", () => {
     const bytes = await marineDriveSetPdf();
     const extract = await extractPdf("marine-drive-set.pdf", bytes);
     assert.equal(extract.sheets.length, 2);
+    assert.match(extract.sheets[0].name, /Proposed additions/i);
+    assert.match(extract.sheets[1].name, /Window schedule/i);
     assert.ok(extract.sheets[0].strings.some((line) => /Occupancy H4 dwelling/i.test(line)));
     assert.equal(
       extract.sheets[0].strings.some((line) => /Window schedule/i.test(line)),
@@ -238,6 +240,25 @@ describe("pdf council set", () => {
     assert.ok(annotated.getPageCount() >= 2);
   });
 
+  it("reports extract progress once per sheet", async () => {
+    const bytes = await marineDriveSetPdf();
+    const seen: { page: number; total: number }[] = [];
+    await extractPdf("marine-drive-set.pdf", bytes, {
+      onProgress: (info) => seen.push({ ...info }),
+    });
+    assert.ok(seen.some((info) => info.page === 0));
+    assert.ok(seen.some((info) => info.page === 1 && info.total === 2));
+    assert.equal(seen.at(-1)?.page, 2);
+    assert.equal(seen.at(-1)?.total, 2);
+  });
+
+  it("caps path entities so a CAD plot cannot explode the extract", async () => {
+    const bytes = loadSample("747-villa.pdf");
+    const extract = await extractPdf("747-villa.pdf", bytes, { maxEntities: 3 });
+    const strokes = extract.sheets[0].geometry.filter((entity) => entity.kind !== "text");
+    assert.ok(strokes.length <= 3);
+  });
+
   it("fails readable text when the PDF has no notes", async () => {
     const empty = await PDFDocument.create();
     empty.addPage();
@@ -245,6 +266,17 @@ describe("pdf council set", () => {
     const extract = await extractPdf("blank.pdf", bytes);
     const audit = auditFromDrawing("blank.pdf", extract);
     assert.equal(audit.failed.some((row) => row.id === "readable-text"), true);
+  });
+});
+
+describe("sheet names", () => {
+  it("names a sheet from the first title-like line", () => {
+    assert.equal(
+      nameSheet(["Occupancy H4 dwelling", "Proposed additions and alterations"], 0),
+      "Sheet 1 · Proposed additions and alterations",
+    );
+    assert.equal(nameSheet(["Erf 672", "Window schedule W1-W19"], 1), "Sheet 2 · Window schedule W1-W19");
+    assert.equal(nameSheet(["Erf 672"], 0), "Sheet 1");
   });
 });
 

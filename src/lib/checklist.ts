@@ -3,13 +3,22 @@ import type { AuditSample } from "@/data/types";
 export const DISCLAIMER =
   "Not a stamp. Not municipal approval. Competent person and owner signatures still required.";
 
+export const ENGINE_NOTE =
+  "Plancheck uses a SANS 10400 drawing-rule index, not the full book. Measured rows used sizes on the sheet. Notes rows looked for the printed phrase.";
+
+function rowMeta(row: { clause?: string; how?: string }) {
+  const clause = row.clause ?? "SANS 10400";
+  const how = row.how === "measured" ? "measured" : "notes";
+  return `${clause}, ${how}`;
+}
+
 export function auditToReport(audit: AuditSample): string {
   const passed = audit.passed.map(
-    (row) => `${row.part} — ${row.check} — ${row.detail} (Pass)`,
+    (row) => `${row.part} — ${row.check} — ${row.detail} (Pass) [${rowMeta(row)}]`,
   );
 
   const failed = audit.failed.flatMap((row) => [
-    `${row.part} — ${row.check}`,
+    `${row.part} — ${row.check} [${rowMeta(row)}]`,
     row.detail,
     `Adjust: ${row.adjust}`,
     "",
@@ -25,6 +34,7 @@ export function auditToReport(audit: AuditSample): string {
     `Verdict: ${audit.verdict}`,
     "",
     DISCLAIMER,
+    ENGINE_NOTE,
     "",
     "PASSED",
     ...passed,

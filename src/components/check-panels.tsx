@@ -5,6 +5,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import type { FailedCheck, PassedCheck } from "@/data/types";
 import { cn } from "cn";
 
+function howLabel(row: { clause?: string; how?: string }) {
+  const clause = row.clause ?? "SANS 10400";
+  return row.how === "measured" ? `${clause} · measured from the sheet` : `${clause} · from notes`;
+}
+
 export type ReviewTab = "passed" | "failed" | "changes";
 
 export const REVIEW_TABS: {
@@ -67,6 +72,7 @@ export function PassedList({ rows }: { rows: PassedCheck[] }) {
             {" · "}
             {row.check}
           </p>
+          <p className="text-xs text-muted-foreground">{howLabel(row)}</p>
           <p className="text-sm text-muted-foreground">{row.detail}</p>
         </li>
       ))}
@@ -91,6 +97,7 @@ export function FailedList({ rows }: { rows: FailedCheck[] }) {
             {" · "}
             {row.check}
           </p>
+          <p className="text-xs text-muted-foreground">{howLabel(row)}</p>
           <p className="text-sm text-muted-foreground">{row.detail}</p>
         </li>
       ))}
@@ -126,6 +133,7 @@ export function ChangeList({
             <p className="text-sm font-medium">
               {row.part} · {row.check}
             </p>
+            <p className="text-xs text-muted-foreground">{howLabel(row)}</p>
             <p className="text-sm text-muted-foreground">{row.adjust}</p>
           </div>
         </li>
