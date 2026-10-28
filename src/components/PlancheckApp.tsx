@@ -58,7 +58,8 @@ async function closePdf(
   await pdf.loadingTask.destroy();
 }
 
-function etaText(progress: ExtractProgress | null, startedAt: number) {
+function etaText(progress: ExtractProgress | null) {
+  const startedAt = progress?.startedAt ?? 0;
   if (!progress || progress.page < 1 || progress.total < 2 || startedAt <= 0) {
     return null;
   }
@@ -87,7 +88,6 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
   const [error, setError] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
   const [progress, setProgress] = useState<ExtractProgress | null>(null);
-  const [startedAt, setStartedAt] = useState(0);
   const [done, setDone] = useState<Record<string, boolean>>({});
   const runId = useRef(0);
 
@@ -103,7 +103,6 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
     setError(null);
     setReading(false);
     setProgress(null);
-    setStartedAt(0);
     resetChecks();
     if (inputRef.current) {
       inputRef.current.value = "";
@@ -125,7 +124,6 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
     setError(null);
     setReading(true);
     setProgress({ page: 0, total: 0 });
-    setStartedAt(Date.now());
     setSheetIndex(0);
     resetChecks();
 
@@ -178,7 +176,6 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
     setError(null);
     setReading(true);
     setProgress({ page: 0, total: 0 });
-    setStartedAt(Date.now());
     setSheetIndex(0);
     resetChecks();
     try {
@@ -312,7 +309,7 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
               <div className="w-full lg:hidden">
                 <ScanLoader />
               </div>
-              <ReadProgress progress={progress} startedAt={startedAt} />
+              <ReadProgress progress={progress} />
             </div>
           ) : (
             <label
@@ -362,7 +359,7 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
           <div className="space-y-6 p-4 md:p-6">
             <SansBook />
             {reading ? (
-              <InspectingState progress={progress} startedAt={startedAt} />
+              <InspectingState progress={progress} />
             ) : viewed ? (
               <Analysis
                 audit={viewed.audit}
@@ -418,7 +415,12 @@ function DrawingPane({
         <SheetSwitcher sheets={sheets} sheetIndex={sheetIndex} onSheet={onSheet} />
         <div className="relative min-h-0 flex-1 overflow-hidden rounded-lg border">
           {pdfBytes ? (
-            <PdfPageView bytes={pdfBytes} label={label} page={sheetIndex + 1} />
+            <PdfPageView
+              key={sheetIndex}
+              bytes={pdfBytes}
+              label={label}
+              page={sheetIndex + 1}
+            />
           ) : (
             <DrawingPreview
               extract={extract}
@@ -609,7 +611,12 @@ function FullscreenDrawing({
       <div className="relative min-h-0 flex-1">
         {pdfBytes ? (
           <>
-            <PdfPageView bytes={pdfBytes} label={label} page={sheetIndex + 1} />
+            <PdfPageView
+              key={sheetIndex}
+              bytes={pdfBytes}
+              label={label}
+              page={sheetIndex + 1}
+            />
             <div className="absolute top-2 left-2 z-10">
               <Button
                 type="button"
@@ -649,26 +656,22 @@ function EmptyState() {
 
 function InspectingState({
   progress,
-  startedAt,
 }: {
   progress: ExtractProgress | null;
-  startedAt: number;
 }) {
   return (
     <div className="hidden space-y-4 lg:block">
       <p className="sr-only">Reading the drawing and running SANS 10400 checks</p>
       <ScanLoader />
-      <ReadProgress progress={progress} startedAt={startedAt} />
+      <ReadProgress progress={progress} />
     </div>
   );
 }
 
 function ReadProgress({
   progress,
-  startedAt,
 }: {
   progress: ExtractProgress | null;
-  startedAt: number;
 }) {
   const total = progress?.total ?? 0;
   const page = progress?.page ?? 0;
@@ -678,7 +681,7 @@ function ReadProgress({
       : page < 1
         ? `Found ${total} sheets. Reading text…`
         : `Reading sheet ${page} of ${total}`;
-  const eta = etaText(progress, startedAt);
+  const eta = etaText(progress);
   const percent = total > 0 ? Math.round((Math.max(page, 0) / total) * 100) : 0;
   return (
     <div className="flex w-full max-w-sm flex-col items-center gap-2 text-center">
@@ -710,14 +713,12 @@ function PdfPageView({
   page: number;
 }) {
   const [src, setSrc] = useState<string | null>(null);
-  const [status, setStatus] = useState("Drawing sheet…");
+  const [status, setStatus] = useState(`Drawing sheet ${page}…`);
   const pdfRef = useRef<Awaited<ReturnType<typeof getDocumentProxy>> | null>(null);
   const bytesRef = useRef<ArrayBuffer | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    setSrc(null);
-    setStatus(`Drawing sheet ${page}…`);
 
     async function draw() {
       try {

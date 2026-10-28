@@ -5,7 +5,7 @@ import { PDFDocument } from "pdf-lib";
 import { auditFromDrawing } from "../cad/audit-from-drawing";
 import { extractDrawing } from "../cad/extract";
 import { geometryBounds } from "../cad/preview";
-import { extractPdf, nameSheet } from "./extract";
+import { extractPdf, nameSheet, type ExtractProgress } from "./extract";
 import {
   marineDriveGlyphPdf,
   marineDriveNotesPdf,
@@ -242,7 +242,7 @@ describe("pdf council set", () => {
 
   it("reports extract progress once per sheet", async () => {
     const bytes = await marineDriveSetPdf();
-    const seen: { page: number; total: number }[] = [];
+    const seen: ExtractProgress[] = [];
     await extractPdf("marine-drive-set.pdf", bytes, {
       onProgress: (info) => seen.push({ ...info }),
     });
@@ -250,6 +250,8 @@ describe("pdf council set", () => {
     assert.ok(seen.some((info) => info.page === 1 && info.total === 2));
     assert.equal(seen.at(-1)?.page, 2);
     assert.equal(seen.at(-1)?.total, 2);
+    assert.ok((seen[0]?.startedAt ?? 0) > 0);
+    assert.ok(seen.every((info) => info.startedAt === seen[0]?.startedAt));
   });
 
   it("caps path entities so a CAD plot cannot explode the extract", async () => {

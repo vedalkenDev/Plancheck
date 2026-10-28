@@ -6,6 +6,7 @@ import { extractTextItems, getDocumentProxy } from "unpdf";
 export type ExtractProgress = {
   page: number;
   total: number;
+  startedAt?: number;
 };
 
 export type ExtractPdfOptions = {
@@ -29,10 +30,11 @@ export async function extractPdf(
   const source = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   const data = new Uint8Array(source);
   const maxEntities = options.maxEntities ?? MAX_PAGE_PATHS;
-  options.onProgress?.({ page: 0, total: 0 });
+  const startedAt = Date.now();
+  options.onProgress?.({ page: 0, total: 0, startedAt });
   const pdf = await getDocumentProxy(data);
   const { totalPages, items } = await extractTextItems(pdf);
-  options.onProgress?.({ page: 0, total: totalPages });
+  options.onProgress?.({ page: 0, total: totalPages, startedAt });
   const sheets: DrawingSheet[] = [];
   const texts: DrawingText[] = [];
   const strings: string[] = [];
@@ -40,7 +42,7 @@ export async function extractPdf(
   const entityCounts: Record<string, number> = { PAGE: totalPages };
 
   for (let page = 0; page < totalPages; page += 1) {
-    options.onProgress?.({ page: page + 1, total: totalPages });
+    options.onProgress?.({ page: page + 1, total: totalPages, startedAt });
     const lines = reconstructPdfLines(items[page] ?? []);
     const pageTexts: DrawingText[] = lines.map((line) => ({ kind: "text" as const, value: line.value }));
     const pageStrings = uniqueLines(pageTexts.map((item) => item.value));
