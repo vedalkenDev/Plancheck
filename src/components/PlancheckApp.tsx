@@ -2,9 +2,9 @@
 
 import { ChevronLeft, ChevronRight, FileUp, Maximize2, Minimize2, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { getDocumentProxy, renderPageAsImage } from "unpdf";
 import { ChangeList, ReviewTitle } from "@/components/check-panels";
 import { DrawingPreview } from "@/components/DrawingPreview";
+import { PdfPageView } from "@/components/PdfPageView";
 import { ReviewDock } from "@/components/ReviewDock";
 import { SansBook } from "@/components/SansBook";
 import { ScanLoader } from "@/components/scanner/figure";
@@ -46,16 +46,6 @@ async function readPdf(
     drawing: await extractPdf(filename, bytes, { onProgress }),
     pdfBytes: bytes.slice(0),
   };
-}
-
-async function closePdf(
-  pdf: Awaited<ReturnType<typeof getDocumentProxy>> | null,
-) {
-  if (!pdf) {
-    return;
-  }
-  await pdf.cleanup();
-  await pdf.loadingTask.destroy();
 }
 
 function etaText(progress: ExtractProgress | null) {
@@ -415,12 +405,7 @@ function DrawingPane({
         <SheetSwitcher sheets={sheets} sheetIndex={sheetIndex} onSheet={onSheet} />
         <div className="relative min-h-0 flex-1 overflow-hidden rounded-lg border">
           {pdfBytes ? (
-            <PdfPageView
-              key={sheetIndex}
-              bytes={pdfBytes}
-              label={label}
-              page={sheetIndex + 1}
-            />
+            <PdfPageView bytes={pdfBytes} label={label} page={sheetIndex + 1} />
           ) : (
             <DrawingPreview
               extract={extract}
@@ -611,12 +596,7 @@ function FullscreenDrawing({
       <div className="relative min-h-0 flex-1">
         {pdfBytes ? (
           <>
-            <PdfPageView
-              key={sheetIndex}
-              bytes={pdfBytes}
-              label={label}
-              page={sheetIndex + 1}
-            />
+            <PdfPageView bytes={pdfBytes} label={label} page={sheetIndex + 1} />
             <div className="absolute top-2 left-2 z-10">
               <Button
                 type="button"
@@ -700,77 +680,6 @@ function ReadProgress({
         </div>
       ) : null}
     </div>
-  );
-}
-
-function PdfPageView({
-  bytes,
-  label,
-  page,
-}: {
-  bytes: ArrayBuffer;
-  label: string;
-  page: number;
-}) {
-  const [src, setSrc] = useState<string | null>(null);
-  const [status, setStatus] = useState(`Drawing sheet ${page}…`);
-  const pdfRef = useRef<Awaited<ReturnType<typeof getDocumentProxy>> | null>(null);
-  const bytesRef = useRef<ArrayBuffer | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function draw() {
-      try {
-        if (bytesRef.current !== bytes || !pdfRef.current) {
-          await closePdf(pdfRef.current);
-          const copy = new Uint8Array(bytes.byteLength);
-          copy.set(new Uint8Array(bytes));
-          pdfRef.current = await getDocumentProxy(copy, { maxImageSize: 16_777_216 });
-          bytesRef.current = bytes;
-        }
-        const image = await renderPageAsImage(pdfRef.current, page, {
-          width: 1400,
-          toDataURL: true,
-        });
-        if (!cancelled && typeof image === "string") {
-          setSrc(image);
-        }
-      } catch {
-        if (!cancelled) {
-          setStatus("This sheet could not be drawn.");
-        }
-      }
-    }
-
-    void draw();
-    return () => {
-      cancelled = true;
-    };
-  }, [bytes, page]);
-
-  useEffect(
-    () => () => {
-      void closePdf(pdfRef.current);
-      pdfRef.current = null;
-    },
-    [],
-  );
-
-  if (!src) {
-    return (
-      <p className="flex h-full min-h-[22rem] items-center justify-center p-4 text-sm text-muted-foreground">
-        {status}
-      </p>
-    );
-  }
-
-  return (
-    <img
-      src={src}
-      alt={label}
-      className="h-full min-h-[22rem] w-full bg-white object-contain"
-    />
   );
 }
 
