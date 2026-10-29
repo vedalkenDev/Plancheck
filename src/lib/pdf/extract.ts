@@ -12,10 +12,41 @@ export type ExtractProgress = {
 export type ExtractPdfOptions = {
   onProgress?: (info: ExtractProgress) => void;
   maxEntities?: number;
+  /** Default `auto`: skip wall paths on notes-only sheets. */
+  paths?: boolean | "auto";
 };
 
 const SHEET_TITLE =
   /proposed|window schedule|\bschedule\b|elevation|section|layout|(?:site|floor|roof)\s*plan|title\s*block/i;
+
+const DRAWING_SHEET =
+  /(?:site|floor|roof|drainage|fire)\s*plans?|floorplan|\belevations?\b|\bsections?\b/i;
+
+const ROOM_LABEL =
+  /\b(?:bed\s*rooms?|kitchen|lounge|gallery|dining(?:\s*room)?|study|bath(?:room)?s?|garage|terrace|porch|breezeway|passage|courtyard|scullery|laundry|lobby|hallway|living(?:\s*room)?|dressing(?:\s*room)?)\b/gi;
+
+const NOTES_SHEET =
+  /\boccupancy\s*[a-hj]\d?|fenestration|sans\s*10\d{3}|nett\s*floor|part\s*[rdmt]\b/i;
+
+/**
+ * Audit reads notes. Wall paths are only for packing stamps off a plan.
+ * Skip `getOperatorList` on occupancy/XA sheets — that walk is the slow part.
+ * Bare "PLAN" in a titleblock is not a floor plan.
+ */
+export function sheetNeedsPaths(strings: string[]): boolean {
+  const blob = strings.join("\n");
+  if (DRAWING_SHEET.test(blob)) {
+    return true;
+  }
+  const rooms = blob.match(ROOM_LABEL);
+  if (rooms && rooms.length >= 3) {
+    return true;
+  }
+  if (NOTES_SHEET.test(blob)) {
+    return false;
+  }
+  return true;
+}
 
 /**
  * Council packs are PDF. The current SANS rules read notes, schedules, and
@@ -49,13 +80,18 @@ export async function extractPdf(
     let pageGeometry: GeomEntity[] = [];
     let width = 0;
     let height = 0;
-    try {
-      const paths = await extractPagePaths(pdf, page + 1, maxEntities);
-      pageGeometry = paths.geometry;
-      width = paths.width;
-      height = paths.height;
-    } catch {
-      pageGeometry = [];
+    const wantPaths =
+      options.paths === true ||
+      (options.paths !== false && sheetNeedsPaths(pageStrings));
+    if (wantPaths) {
+      try {
+        const paths = await extractPagePaths(pdf, page + 1, maxEntities);
+        pageGeometry = paths.geometry;
+        width = paths.width;
+        height = paths.height;
+      } catch {
+        pageGeometry = [];
+      }
     }
     if (!width || !height) {
       try {
