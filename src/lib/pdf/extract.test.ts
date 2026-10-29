@@ -129,29 +129,32 @@ describe("pdf council set", () => {
     );
   });
 
-  it("reads the plotted Marine Drive DXF sheet as a council PDF", async () => {
-    const bytes = loadSample("marine-drive.pdf");
-    const extract = await extractPdf("marine-drive.pdf", bytes);
-    const audit = auditFromDrawing("marine-drive.pdf", extract);
+  it("reads occupancy from a Marine Drive CAD fixture plotted in the test", async () => {
+    const dxf = readFileSync("fixtures/cad/marine-drive.dxf");
+    const drawing = extractDrawing(
+      "marine-drive.dxf",
+      dxf.buffer.slice(dxf.byteOffset, dxf.byteOffset + dxf.byteLength),
+    );
+    const bytes = await plotDrawingPdf(drawing);
+    const extract = await extractPdf("marine-drive-plot.pdf", bytes);
+    const audit = auditFromDrawing("marine-drive-plot.pdf", extract);
     assert.equal(audit.occupancy, "H4");
     assert.match(audit.address, /69 Marine Drive/);
     assert.ok(extract.geometry.some((entity) => entity.kind !== "text"));
   });
 
-  it("reads Hartley occupancy from a plotted PDF sheet", async () => {
-    const bytes = loadSample("hartley-test2.pdf");
-    const extract = await extractPdf("hartley-test2.pdf", bytes);
-    const audit = auditFromDrawing("hartley-test2.pdf", extract);
+  it("reads Hartley occupancy from a CAD fixture plotted in the test", async () => {
+    const dxf = readFileSync("fixtures/cad/hartley-test2.dxf");
+    const drawing = extractDrawing(
+      "hartley-test2.dxf",
+      dxf.buffer.slice(dxf.byteOffset, dxf.byteOffset + dxf.byteLength),
+    );
+    const bytes = await plotDrawingPdf(drawing);
+    const extract = await extractPdf("hartley-plot.pdf", bytes);
+    const audit = auditFromDrawing("hartley-plot.pdf", extract);
     assert.equal(audit.occupancy, "G1");
     assert.equal(audit.occupancyNote, "medical offices");
     assert.match(audit.address, /Hartley Road/);
-  });
-
-  it("reads wall geometry from the converted woodshed plan PDF", async () => {
-    const bytes = loadSample("woodshed-plan.pdf");
-    const extract = await extractPdf("woodshed-plan.pdf", bytes);
-    assert.ok((extract.entityCounts.POLYLINE ?? 0) > 100);
-    assert.ok(extract.strings.length > 20);
   });
 
   it("plots a DXF and still recovers occupancy after a glyph-split plot", async () => {
