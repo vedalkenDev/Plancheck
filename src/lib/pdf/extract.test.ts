@@ -5,7 +5,7 @@ import { PDFDocument } from "pdf-lib";
 import { auditFromDrawing } from "../cad/audit-from-drawing";
 import { extractDrawing } from "../cad/extract";
 import { geometryBounds } from "../cad/preview";
-import { extractPdf, nameSheet, type ExtractProgress } from "./extract";
+import { extractPdf, nameSheet, sheetNeedsPaths, type ExtractProgress } from "./extract";
 import {
   marineDriveGlyphPdf,
   marineDriveNotesPdf,
@@ -31,7 +31,11 @@ describe("pdf council set", () => {
     const extract = await extractPdf("marine-drive-notes.pdf", bytes);
     assert.equal(extract.format, "pdf");
     assert.ok(extract.strings.some((line) => /Occupancy H4 dwelling/i.test(line)));
-    assert.ok(extract.geometry.some((entity) => entity.kind === "polyline"));
+    assert.equal(
+      extract.geometry.some((entity) => entity.kind !== "text"),
+      false,
+      "notes-only sheets skip wall paths",
+    );
 
     const audit = auditFromDrawing("marine-drive-notes.pdf", extract);
     assert.equal(audit.format, "pdf");
@@ -64,9 +68,9 @@ describe("pdf council set", () => {
       (entity) => entity.kind === "text" && /PLANCHECK/i.test(entity.value),
     );
     assert.ok(label && label.kind === "text");
-    const onRect =
-      label.p.x >= 510 && label.p.x <= 790 && label.p.y >= 70 && label.p.y <= 510;
-    assert.equal(onRect, false);
+    const onNotes =
+      label.p.x >= 40 && label.p.x <= 400 && label.p.y >= 300 && label.p.y <= 540;
+    assert.equal(onNotes, false, "PLANCHECK must not cover the printed notes");
 
     if (annotated.getPageCount() > 1) {
       const field = annotated.getForm().getTextField("plancheck.fail.xa-fenestration");
@@ -140,7 +144,7 @@ describe("pdf council set", () => {
     const audit = auditFromDrawing("marine-drive-plot.pdf", extract);
     assert.equal(audit.occupancy, "H4");
     assert.match(audit.address, /69 Marine Drive/);
-    assert.ok(extract.geometry.some((entity) => entity.kind !== "text"));
+    assert.ok(extract.strings.some((line) => /Occupancy H4 dwelling/i.test(line)));
   });
 
   it("reads Hartley occupancy from a CAD fixture plotted in the test", async () => {
@@ -271,6 +275,43 @@ describe("pdf council set", () => {
     const extract = await extractPdf("blank.pdf", bytes);
     const audit = auditFromDrawing("blank.pdf", extract);
     assert.equal(audit.failed.some((row) => row.id === "readable-text"), true);
+  });
+});
+
+describe("sheet path budget", () => {
+  it("skips wall paths on occupancy notes and keeps them on a floor plan", () => {
+    assert.equal(
+      sheetNeedsPaths([
+        "PLAN",
+        "Occupancy H4 dwelling",
+        "Fenestration L/G 16.9%",
+        "L/G nett floor 371 m2",
+      ]),
+      false,
+    );
+    assert.equal(
+      sheetNeedsPaths(["Typical Dogtrot Floorplan", "Shed Room", "Porch"]),
+      true,
+    );
+    assert.equal(
+      sheetNeedsPaths(["KITCHEN", "GALLERY", "BED ROOM 1", "LOUNGE"]),
+      true,
+    );
+    assert.equal(
+      sheetNeedsPaths(["Ground floor plan", "Occupancy H4 dwelling"]),
+      true,
+    );
+  });
+
+  it("does not walk paths on a notes PDF, and still walks a villa plan", async () => {
+    const notes = await extractPdf("marine-drive-notes.pdf", await marineDriveNotesPdf());
+    assert.equal(
+      notes.geometry.some((entity) => entity.kind !== "text"),
+      false,
+    );
+
+    const villa = await extractPdf("747-villa.pdf", loadSample("747-villa.pdf"));
+    assert.ok((villa.entityCounts.POLYLINE ?? 0) > 20);
   });
 });
 
