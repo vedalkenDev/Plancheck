@@ -116,6 +116,16 @@ const DIAL = (
   </g>
 );
 
-export function ScannerArt() {
-  return <ScannerLive base={BASE} rail={RAIL} carriageBack={BACK} bed={BED} carriageFront={FRONT} dial={DIAL} />;
+export function ScannerArt({ passive = false }: { passive?: boolean }) {
+  return (
+    <ScannerLive
+      base={BASE}
+      rail={RAIL}
+      carriageBack={BACK}
+      bed={BED}
+      carriageFront={FRONT}
+      dial={DIAL}
+      passive={passive}
+    />
+  );
 }

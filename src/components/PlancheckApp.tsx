@@ -37,17 +37,6 @@ const DRAWING_NAME = /\.pdf$/i;
 const MAX_BYTES = 40 * 1024 * 1024;
 const MIN_SPIN_MS = 700;
 
-async function readPdf(
-  filename: string,
-  bytes: ArrayBuffer,
-  onProgress?: (info: ExtractProgress) => void,
-) {
-  return {
-    drawing: await extractPdf(filename, bytes, { onProgress }),
-    pdfBytes: bytes.slice(0),
-  };
-}
-
 function etaText(progress: ExtractProgress | null) {
   const startedAt = progress?.startedAt ?? 0;
   if (!progress || progress.page < 1 || progress.total < 2 || startedAt <= 0) {
@@ -72,6 +61,7 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
   const [pdfBytes, setPdfBytes] = useState<ArrayBuffer | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
+  const [pathsReady, setPathsReady] = useState(true);
   const [progress, setProgress] = useState<ExtractProgress | null>(null);
   const [done, setDone] = useState<Record<string, boolean>>({});
   const [mode, setMode] = useState<AppMode>("inspect");
@@ -88,6 +78,8 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
   function resetChecks() {
     setDone({});
     setPicked({});
+    setMode("inspect");
+    setCorrected(null);
   }
 
   function reset() {
@@ -97,6 +89,7 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
     adoptPdf(null);
     setError(null);
     setReading(false);
+    setPathsReady(true);
     setProgress(null);
     resetChecks();
     if (inputRef.current) {
@@ -118,7 +111,8 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
     runId.current = id;
     setError(null);
     setReading(true);
-    setProgress({ page: 0, total: 0 });
+    setPathsReady(true);
+    setProgress({ page: 0, total: 0, phase: "text" });
     setSheetIndex(0);
     resetChecks();
 
@@ -132,17 +126,7 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
       if (runId.current !== id) {
         return;
       }
-      const { drawing, pdfBytes: nextPdf } = await readPdf(file.name, bytes, (info) => {
-        if (runId.current === id) {
-          setProgress(info);
-        }
-      });
-      if (runId.current !== id) {
-        return;
-      }
-      setDrawingName(file.name);
-      setExtract(drawing);
-      adoptPdf(nextPdf);
+      await ingest(id, file.name, bytes, file.name);
     } catch {
       if (runId.current !== id) {
         return;
@@ -170,7 +154,8 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
     runId.current = id;
     setError(null);
     setReading(true);
-    setProgress({ page: 0, total: 0 });
+    setPathsReady(true);
+    setProgress({ page: 0, total: 0, phase: "text" });
     setSheetIndex(0);
     resetChecks();
     try {
@@ -188,17 +173,7 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
         return;
       }
       const filename = sample.href.split("/").pop() ?? `${sample.id}.pdf`;
-      const { drawing, pdfBytes: nextPdf } = await readPdf(filename, bytes, (info) => {
-        if (runId.current === id) {
-          setProgress(info);
-        }
-      });
-      if (runId.current !== id) {
-        return;
-      }
-      setDrawingName(sample.label);
-      setExtract(drawing);
-      adoptPdf(nextPdf);
+      await ingest(id, filename, bytes, sample.label);
     } catch {
       if (runId.current !== id) {
         return;
@@ -210,6 +185,39 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
         setProgress(null);
       }
     }
+  }
+
+  async function ingest(
+    id: number,
+    filename: string,
+    bytes: ArrayBuffer,
+    label: string,
+  ) {
+    const copy = bytes.slice(0);
+    const drawing = await extractPdf(filename, bytes, {
+      onProgress: (info) => {
+        if (runId.current === id) {
+          setProgress(info);
+        }
+      },
+      onText: (early) => {
+        if (runId.current !== id) {
+          return;
+        }
+        setDrawingName(label);
+        setExtract(early);
+        adoptPdf(copy);
+        setReading(false);
+        setPathsReady(false);
+      },
+    });
+    if (runId.current !== id) {
+      return;
+    }
+    setDrawingName(label);
+    setExtract(drawing);
+    adoptPdf(copy);
+    setPathsReady(true);
   }
 
   const audit = useMemo(() => {
@@ -235,7 +243,7 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
   );
 
   const stampKey =
-    mode === "correct" && pdfBytes && audit
+    mode === "correct" && pdfBytes && audit && pathsReady
       ? `${audit.id}:${[...selectedNotes].sort().join(",")}`
       : "";
 
@@ -263,7 +271,9 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
 
   const previewBytes =
     mode === "correct" && corrected?.key === stampKey ? corrected.bytes : pdfBytes;
-  const writingNotes = mode === "correct" && Boolean(pdfBytes) && corrected?.key !== stampKey;
+  const tracing = Boolean(extract) && !pathsReady && !reading;
+  const writingNotes =
+    mode === "correct" && pathsReady && Boolean(pdfBytes) && corrected?.key !== stampKey;
 
   const viewed = useMemo(() => {
     if (!extract || !audit) {
@@ -346,6 +356,8 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
               setDone={setDone}
               mode={mode}
               writing={writingNotes}
+              tracing={tracing}
+              progress={progress}
               plan={plan}
               picked={picked}
               setPicked={setPicked}
@@ -419,6 +431,7 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
                 setDone={setDone}
                 mode={mode}
                 onMode={setMode}
+                pathsReady={pathsReady}
                 plan={plan}
                 picked={picked}
                 setPicked={setPicked}
@@ -445,6 +458,8 @@ function DrawingPane({
   setDone,
   mode,
   writing,
+  tracing,
+  progress,
   plan,
   picked,
   setPicked,
@@ -461,6 +476,8 @@ function DrawingPane({
   setDone: (value: Record<string, boolean>) => void;
   mode: AppMode;
   writing: boolean;
+  tracing: boolean;
+  progress: ExtractProgress | null;
   plan: ReturnType<typeof correctionsFromAudit>;
   picked: Record<string, boolean>;
   setPicked: (value: Record<string, boolean>) => void;
@@ -474,7 +491,11 @@ function DrawingPane({
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
             <p className="truncate text-sm font-medium">{label}</p>
-            {mode === "correct" ? (
+            {tracing ? (
+              <p className="truncate text-xs text-muted-foreground">
+                Tracing the plan so notes land on empty paper
+              </p>
+            ) : mode === "correct" ? (
               <p className="truncate text-xs text-muted-foreground">
                 {writing ? "Writing SANS notes onto the drawing…" : "Corrector notes on empty paper"}
               </p>
@@ -497,7 +518,7 @@ function DrawingPane({
             </Button>
           </div>
         </div>
-        <div className="min-h-0 flex-1 overflow-hidden rounded-lg border">
+        <div className="relative min-h-0 flex-1 overflow-hidden rounded-lg border">
           {pdfBytes ? (
             <PdfPreview
               bytes={pdfBytes}
@@ -517,6 +538,24 @@ function DrawingPane({
               onToggleFullscreen={() => setFullscreen(true)}
             />
           )}
+          {tracing || writing ? (
+            <div className="scan-overlay" aria-live="polite" aria-busy="true">
+              <ScanLoader
+                compact
+                title={tracing ? "Tracing the plan" : "Writing notes"}
+              />
+              {tracing && progress?.phase === "paths" && (progress.total ?? 0) > 1 ? (
+                <p className="mt-1 text-center text-[10.5px] tracking-widest text-muted-foreground uppercase">
+                  Sheet {progress.page} of {progress.total}
+                </p>
+              ) : null}
+              <p className="sr-only">
+                {tracing
+                  ? "Tracing the plan so notes land on empty paper"
+                  : "Writing SANS notes onto the drawing"}
+              </p>
+            </div>
+          ) : null}
         </div>
       </div>
       {fullscreen ? (
@@ -709,11 +748,15 @@ function ReadProgress({
 }) {
   const total = progress?.total ?? 0;
   const page = progress?.page ?? 0;
-  const headline =
-    total < 1
+  const tracing = progress?.phase === "paths";
+  const headline = tracing
+    ? total < 1
+      ? "Tracing the plan…"
+      : `Tracing sheet ${page} of ${total}`
+    : total < 1
       ? "Opening the PDF…"
       : page < 1
-        ? `Found ${total} sheets. Reading text…`
+        ? `Found ${total} sheets. Reading notes…`
         : `Reading sheet ${page} of ${total}`;
   const eta = etaText(progress);
   const percent = total > 0 ? Math.round((Math.max(page, 0) / total) * 100) : 0;
@@ -740,9 +783,11 @@ function ReadProgress({
 function ModeSwitch({
   mode,
   onMode,
+  pathsReady,
 }: {
   mode: AppMode;
   onMode: (mode: AppMode) => void;
+  pathsReady: boolean;
 }) {
   return (
     <div className="flex w-fit gap-0.5 rounded-lg border p-0.5" role="group" aria-label="Plancheck mode">
@@ -760,6 +805,7 @@ function ModeSwitch({
         size="sm"
         variant={mode === "correct" ? "secondary" : "ghost"}
         aria-pressed={mode === "correct"}
+        disabled={!pathsReady}
         onClick={() => onMode("correct")}
       >
         Correct
@@ -776,6 +822,7 @@ function Analysis({
   setDone,
   mode,
   onMode,
+  pathsReady,
   plan,
   picked,
   setPicked,
@@ -787,6 +834,7 @@ function Analysis({
   setDone: (value: Record<string, boolean>) => void;
   mode: AppMode;
   onMode: (mode: AppMode) => void;
+  pathsReady: boolean;
   plan: ReturnType<typeof correctionsFromAudit>;
   picked: Record<string, boolean>;
   setPicked: (value: Record<string, boolean>) => void;
@@ -842,7 +890,7 @@ function Analysis({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <ModeSwitch mode={mode} onMode={onMode} />
+          <ModeSwitch mode={mode} onMode={onMode} pathsReady={pathsReady} />
           <Badge variant="outline">
             {audit.occupancy} · {audit.occupancyNote}
           </Badge>
@@ -903,7 +951,7 @@ function Analysis({
           type="button"
           variant="outline"
           onClick={() => void downloadDrawing()}
-          disabled={!pdfBytes}
+          disabled={!pdfBytes || !pathsReady}
         >
           {mode === "correct" ? "Download corrected PDF" : "Download annotated PDF"}
         </Button>

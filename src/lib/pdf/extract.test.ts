@@ -257,6 +257,11 @@ describe("pdf council set", () => {
     assert.ok(seen.some((info) => info.page === 1 && info.total === 2));
     assert.equal(seen.at(-1)?.page, 2);
     assert.equal(seen.at(-1)?.total, 2);
+    assert.ok(seen.some((info) => info.phase === "text"));
+    assert.equal(
+      seen.some((info) => info.phase === "paths"),
+      false,
+    );
     assert.ok((seen[0]?.startedAt ?? 0) > 0);
     assert.ok(seen.every((info) => info.startedAt === seen[0]?.startedAt));
   });
@@ -312,6 +317,32 @@ describe("sheet path budget", () => {
 
     const villa = await extractPdf("747-villa.pdf", loadSample("747-villa.pdf"));
     assert.ok((villa.entityCounts.POLYLINE ?? 0) > 20);
+  });
+
+  it("hands villa notes out before walking wall paths", async () => {
+    const early: { strings: string[]; strokes: number }[] = [];
+    const extract = await extractPdf("747-villa.pdf", loadSample("747-villa.pdf"), {
+      onText: (info) => {
+        early.push({
+          strings: info.strings,
+          strokes: info.geometry.filter((entity) => entity.kind !== "text").length,
+        });
+      },
+    });
+    assert.equal(early.length, 1);
+    assert.ok(early[0]?.strings.includes("KITCHEN"));
+    assert.equal(early[0]?.strokes, 0);
+    assert.ok((extract.entityCounts.POLYLINE ?? 0) > 20);
+  });
+
+  it("does not emit an early snapshot when every sheet skipped paths", async () => {
+    let calls = 0;
+    await extractPdf("marine-drive-notes.pdf", await marineDriveNotesPdf(), {
+      onText: () => {
+        calls += 1;
+      },
+    });
+    assert.equal(calls, 0);
   });
 });
 
