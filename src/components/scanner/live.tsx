@@ -33,6 +33,7 @@ export function ScannerLive({
   bed,
   carriageFront,
   dial,
+  passive = false,
 }: {
   base: ReactNode;
   rail: ReactNode;
@@ -40,6 +41,7 @@ export function ScannerLive({
   bed: ReactNode;
   carriageFront: ReactNode;
   dial: ReactNode;
+  passive?: boolean;
 }) {
   const { anchor, say } = useReadout<HTMLDivElement>();
   const back = useRef<SVGGElement>(null);
@@ -147,24 +149,33 @@ export function ScannerLive({
     <div
       ref={anchor}
       className="scan-stage"
-      tabIndex={0}
-      role="slider"
-      aria-label={LABEL}
-      aria-valuemin={0}
-      aria-valuemax={TRAVEL_MM}
-      aria-valuenow={0}
-      aria-valuetext={described(0)}
-      onPointerDown={(event) => {
-        event.currentTarget.setPointerCapture(event.pointerId);
-        take(mmFrom(event));
-      }}
-      onPointerMove={(event) => {
-        if (state.current.holding) take(mmFrom(event));
-      }}
-      onPointerUp={release}
-      onPointerCancel={release}
-      onKeyDown={onKey}
-      onFocus={() => writeValue(state.current.mm)}
+      tabIndex={passive ? undefined : 0}
+      role={passive ? undefined : "slider"}
+      aria-hidden={passive ? true : undefined}
+      aria-label={passive ? undefined : LABEL}
+      aria-valuemin={passive ? undefined : 0}
+      aria-valuemax={passive ? undefined : TRAVEL_MM}
+      aria-valuenow={passive ? undefined : 0}
+      aria-valuetext={passive ? undefined : described(0)}
+      onPointerDown={
+        passive
+          ? undefined
+          : (event) => {
+              event.currentTarget.setPointerCapture(event.pointerId);
+              take(mmFrom(event));
+            }
+      }
+      onPointerMove={
+        passive
+          ? undefined
+          : (event) => {
+              if (state.current.holding) take(mmFrom(event));
+            }
+      }
+      onPointerUp={passive ? undefined : release}
+      onPointerCancel={passive ? undefined : release}
+      onKeyDown={passive ? undefined : onKey}
+      onFocus={passive ? undefined : () => writeValue(state.current.mm)}
     >
       <IsoFigure width={WIDTH} height={HEIGHT} label={LABEL}>
         {base}

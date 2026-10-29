@@ -21,3 +21,35 @@
   outline: 1px solid var(--anatomy-muted);
   outline-offset: 6px;
 }
+
+.scan-loader[data-compact] .iso-figure {
+  margin: 0;
+}
+
+.scan-loader[data-compact] .iso-plate {
+  padding: 32px 10px 24px;
+  box-shadow: var(--anatomy-lift);
+}
+
+.scan-loader[data-compact] .iso-plate-corners {
+  inset: 10px 12px;
+}
+
+.scan-loader[data-compact] .iso-legend {
+  display: none;
+}
+
+.scan-overlay {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 20;
+  width: min(17.5rem, 78%);
+  pointer-events: none;
+}
+
+.scan-overlay .iso-plate-corner[data-corner="title"] {
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
