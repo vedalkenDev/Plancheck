@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, FileUp, Maximize2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileUp, Maximize2, Minimize2, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { ChangeList, ReviewTitle } from "@/components/check-panels";
 import { DrawingPreview } from "@/components/DrawingPreview";
@@ -75,25 +75,11 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
   const [drawingName, setDrawingName] = useState("drawing");
   const [sheetIndex, setSheetIndex] = useState(0);
   const [pdfBytes, setPdfBytes] = useState<ArrayBuffer | null>(null);
-  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
-  const pdfUrlRef = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
   const [progress, setProgress] = useState<ExtractProgress | null>(null);
   const [done, setDone] = useState<Record<string, boolean>>({});
   const runId = useRef(0);
-
-  function adoptPdf(bytes: ArrayBuffer | null) {
-    if (pdfUrlRef.current) {
-      URL.revokeObjectURL(pdfUrlRef.current);
-      pdfUrlRef.current = null;
-    }
-    if (bytes) {
-      pdfUrlRef.current = URL.createObjectURL(new Blob([bytes.slice(0)], { type: "application/pdf" }));
-    }
-    setPdfBytes(bytes);
-    setPdfUrl(pdfUrlRef.current);
-  }
 
   function resetChecks() {
     setDone({});
@@ -103,7 +89,7 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
     runId.current += 1;
     setExtract(null);
     setSheetIndex(0);
-    adoptPdf(null);
+    setPdfBytes(null);
     setError(null);
     setReading(false);
     setProgress(null);
@@ -112,15 +98,6 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
       inputRef.current.value = "";
     }
   }
-
-  useEffect(
-    () => () => {
-      if (pdfUrlRef.current) {
-        URL.revokeObjectURL(pdfUrlRef.current);
-      }
-    },
-    [],
-  );
 
   async function inspect(file: File) {
     if (!DRAWING_NAME.test(file.name)) {
@@ -160,14 +137,14 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
       }
       setDrawingName(file.name);
       setExtract(drawing);
-      adoptPdf(nextPdf);
+      setPdfBytes(nextPdf);
     } catch {
       if (runId.current !== id) {
         return;
       }
       setError("The PDF could not be read. Plot a vector PDF from CAD and try again.");
       setExtract(null);
-      adoptPdf(null);
+      setPdfBytes(null);
     } finally {
       if (runId.current === id) {
         setReading(false);
@@ -216,7 +193,7 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
       }
       setDrawingName(sample.label);
       setExtract(drawing);
-      adoptPdf(nextPdf);
+      setPdfBytes(nextPdf);
     } catch {
       if (runId.current !== id) {
         return;
@@ -290,7 +267,7 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
       </header>
 
       <div className="grid min-h-0 flex-1 lg:grid-cols-3">
-        <section className="flex min-h-[70vh] min-w-0 flex-col border-b p-4 lg:col-span-2 lg:min-h-0 lg:overflow-hidden lg:border-r lg:border-b-0 lg:p-6">
+        <section className="flex min-h-[28rem] min-w-0 flex-col border-b p-4 lg:min-h-0 lg:overflow-hidden lg:border-r lg:border-b-0 lg:p-6">
           <input
             ref={inputRef}
             id={inputId}
@@ -303,7 +280,6 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
             <DrawingPane
               extract={viewed.extract}
               pdfBytes={pdfBytes}
-              pdfUrl={pdfUrl}
               label={viewed.audit.label}
               audit={viewed.audit}
               sheets={viewed.sheets}
@@ -369,7 +345,7 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
           </div>
         </section>
 
-        <section className="min-h-0 min-w-0 overflow-auto">
+        <section className="min-h-0 min-w-0 overflow-auto lg:col-span-2">
           <div className="space-y-6 p-4 md:p-6">
             <SansBook />
             {reading ? (
@@ -395,7 +371,6 @@ export function PlancheckApp({ samples, userEmail }: PlancheckAppProps) {
 function DrawingPane({
   extract,
   pdfBytes,
-  pdfUrl,
   label,
   audit,
   sheets,
@@ -407,7 +382,6 @@ function DrawingPane({
 }: {
   extract: DrawingExtract;
   pdfBytes: ArrayBuffer | null;
-  pdfUrl: string | null;
   label: string;
   audit: AuditSample | null;
   sheets: { name: string }[];
@@ -424,27 +398,14 @@ function DrawingPane({
       <div className="flex min-h-0 flex-1 flex-col gap-3 rounded-xl border-2 border-border bg-card p-4">
         <div className="flex items-center justify-between gap-2">
           <p className="truncate text-sm font-medium">{label}</p>
-          <div className="flex shrink-0 items-center gap-1">
-            {pdfBytes ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Fullscreen"
-                onClick={() => setFullscreen(true)}
-              >
-                <Maximize2 />
-              </Button>
-            ) : null}
-            <Button type="button" variant="ghost" size="sm" onClick={onReplace}>
-              Replace
-            </Button>
-          </div>
+          <Button type="button" variant="ghost" size="sm" onClick={onReplace}>
+            Replace
+          </Button>
         </div>
         <SheetSwitcher sheets={sheets} sheetIndex={sheetIndex} onSheet={onSheet} />
         <div className="relative min-h-0 flex-1 overflow-hidden rounded-lg border">
-          {pdfBytes && pdfUrl ? (
-            <PdfPageView bytes={pdfBytes} url={pdfUrl} label={label} page={sheetIndex + 1} />
+          {pdfBytes ? (
+            <PdfPageView bytes={pdfBytes} label={label} page={sheetIndex + 1} />
           ) : (
             <DrawingPreview
               extract={extract}
@@ -452,13 +413,25 @@ function DrawingPane({
               onToggleFullscreen={() => setFullscreen(true)}
             />
           )}
+          {pdfBytes ? (
+            <div className="absolute top-2 left-2 z-10">
+              <Button
+                type="button"
+                variant="secondary"
+                size="icon-sm"
+                aria-label="Fullscreen"
+                onClick={() => setFullscreen(true)}
+              >
+                <Maximize2 />
+              </Button>
+            </div>
+          ) : null}
         </div>
       </div>
       {fullscreen ? (
         <FullscreenDrawing
           extract={extract}
           pdfBytes={pdfBytes}
-          pdfUrl={pdfUrl}
           label={label}
           audit={audit}
           sheets={sheets}
@@ -530,7 +503,6 @@ function SheetSwitcher({
 function FullscreenDrawing({
   extract,
   pdfBytes,
-  pdfUrl,
   label,
   audit,
   sheets,
@@ -542,7 +514,6 @@ function FullscreenDrawing({
 }: {
   extract: DrawingExtract;
   pdfBytes: ArrayBuffer | null;
-  pdfUrl: string | null;
   label: string;
   audit: AuditSample | null;
   sheets: { name: string }[];
@@ -623,8 +594,21 @@ function FullscreenDrawing({
         </Button>
       </div>
       <div className="relative min-h-0 flex-1">
-        {pdfBytes && pdfUrl ? (
-          <PdfPageView bytes={pdfBytes} url={pdfUrl} label={label} page={sheetIndex + 1} />
+        {pdfBytes ? (
+          <>
+            <PdfPageView bytes={pdfBytes} label={label} page={sheetIndex + 1} />
+            <div className="absolute top-2 left-2 z-10">
+              <Button
+                type="button"
+                variant="secondary"
+                size="icon-sm"
+                aria-label="Exit fullscreen"
+                onClick={onClose}
+              >
+                <Minimize2 />
+              </Button>
+            </div>
+          </>
         ) : (
           <DrawingPreview
             extract={extract}
