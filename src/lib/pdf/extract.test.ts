@@ -11,6 +11,7 @@ import {
   marineDriveNotesPdf,
   marineDriveSetPdf,
   measuredWindowNotesPdf,
+  thinFloorplanPdf,
   windowPaneNotesPdf,
 } from "./fixture";
 import { plotDrawingPdf } from "./plot";
@@ -259,6 +260,25 @@ describe("pdf council set", () => {
     const extract = await extractPdf("747-villa.pdf", bytes, { maxEntities: 3 });
     const strokes = extract.sheets[0].geometry.filter((entity) => entity.kind !== "text");
     assert.ok(strokes.length <= 3);
+  });
+
+  it("measures stairs and windows from on-sheet dimensions on a thin floor plan", async () => {
+    const bytes = await thinFloorplanPdf();
+    const extract = await extractPdf("thin-floorplan.pdf", bytes);
+    assert.ok(extract.strings.some((line) => /SCALE 1:100/i.test(line)));
+    assert.ok(
+      extract.geometry.some(
+        (entity) => entity.kind === "text" && /170/.test(entity.value) && /riser/i.test(entity.value),
+      ),
+    );
+
+    const audit = auditFromDrawing("thin-floorplan.pdf", extract);
+    const stairs = audit.passed.find((row) => row.id === "part-m");
+    assert.equal(stairs?.how, "measured");
+    assert.equal(stairs?.detail, "170 mm riser, 250 mm going");
+    const windows = audit.passed.find((row) => row.id === "window-schedule");
+    assert.equal(windows?.how, "measured");
+    assert.match(windows?.detail ?? "", /W1/);
   });
 
   it("fails readable text when the PDF has no notes", async () => {

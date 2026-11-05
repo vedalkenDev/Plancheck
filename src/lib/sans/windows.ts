@@ -62,9 +62,14 @@ export function parsePanes(blob: string): WindowPane[] {
   return uniquePanes(panes);
 }
 
-export function readWindowSchedule(blob: string): WindowScheduleReading {
-  const types = findWindowTypes(blob);
-  const units = parseWindowUnits(blob);
+export function readWindowSchedule(
+  blob: string,
+  extraUnits: ReturnType<typeof parseWindowUnits> = [],
+): WindowScheduleReading {
+  const units = [...parseWindowUnits(blob), ...extraUnits];
+  const types = [
+    ...new Set([...findWindowTypes(blob), ...units.map((unit) => unit.type)]),
+  ];
   const panes = parsePanes(blob);
   const overall = uniqueOverall(
     units.map((unit) => ({

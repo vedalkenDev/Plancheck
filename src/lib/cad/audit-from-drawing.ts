@@ -6,6 +6,7 @@ import {
   findAddresses,
   occupancyOf,
 } from "@/lib/sans/rules";
+import { readSheet } from "@/lib/sans/sheet";
 
 export function auditFromDrawing(
   filename: string,
@@ -21,6 +22,7 @@ export function auditFromDrawing(
     extract.strings.find((line) => line.length > 24) ??
     filename;
 
+  const sheet = readSheet(extract);
   const ctx = {
     filename,
     extract,
@@ -28,6 +30,7 @@ export function auditFromDrawing(
     occupancy: occupancy.code,
     occupancyNote: occupancy.note,
     addresses,
+    sheet,
   };
 
   const { passed, failed } = evaluateRules(ctx);
@@ -42,7 +45,7 @@ export function auditFromDrawing(
       "This PDF has little readable text. Plot from CAD as a vector PDF so titles, notes, and schedules stay selectable. Scanned sheets cannot be checked yet.",
     );
   }
-  const fenestration = readFenestration(blob);
+  const fenestration = readFenestration(blob, sheet.windows);
   if (
     !fenestration.measured &&
     fenestration.storeys.some((row) => row.printedPercent !== undefined)
