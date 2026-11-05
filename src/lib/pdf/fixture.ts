@@ -162,6 +162,26 @@ export async function thinFloorplanPdf() {
   return pdf.save();
 }
 
+/** Same Marine Drive notes, flattened to a picture with no text layer. */
+export async function marineDriveRasterPdf() {
+  return flattenToImagePdf(await marineDriveNotesPdf());
+}
+
+export async function flattenToImagePdf(bytes: Uint8Array) {
+  const { renderPageAsImage } = await import("unpdf");
+  const png = new Uint8Array(
+    await renderPageAsImage(bytes, 1, {
+      canvasImport: () => import("@napi-rs/canvas"),
+      scale: 2.5,
+    }),
+  );
+  const pdf = await PDFDocument.create();
+  const image = await pdf.embedPng(png);
+  const page = pdf.addPage([842, 595]);
+  page.drawImage(image, { x: 0, y: 0, width: 842, height: 595 });
+  return pdf.save();
+}
+
 async function notesPages(pages: string[][], splitGlyphs: boolean) {
   const pdf = await PDFDocument.create();
   const font = await pdf.embedFont(StandardFonts.Helvetica);

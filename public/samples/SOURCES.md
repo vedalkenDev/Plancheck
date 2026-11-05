@@ -8,5 +8,6 @@ PDF examples for the Plancheck UI. CAD files used in tests live in `fixtures/cad
 - `woodshed-plan.pdf` — plotted from [xuminic/woodshed `plan.dxf`](https://github.com/xuminic/woodshed) (MIT).
 - `marine-drive.pdf` / `hartley-test2.pdf` — plotted from the Plancheck CAD fixtures.
 - `marine-drive-set.pdf` — Marine Drive notes split across two sheets.
+- `marine-drive-notes-raster.pdf` — Marine Drive notes flattened to a picture (no text layer) for OCR.
 
 Do not treat these as municipal submissions or as a SANS-compliant set.

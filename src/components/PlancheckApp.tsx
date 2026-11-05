@@ -660,7 +660,9 @@ function ReadProgress({
       ? "Opening the PDF…"
       : page < 1
         ? `Found ${total} sheets. Reading text…`
-        : `Reading sheet ${page} of ${total}`;
+        : progress?.ocr
+          ? `Reading sheet ${page} of ${total} with OCR…`
+          : `Reading sheet ${page} of ${total}`;
   const eta = etaText(progress);
   const percent = total > 0 ? Math.round((Math.max(page, 0) / total) * 100) : 0;
   return (
