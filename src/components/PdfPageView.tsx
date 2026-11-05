@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, Minus, Plus, Scaling } from "lucide-react";
+import { Minus, Plus, Scaling } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { getDocumentProxy } from "unpdf";
 import { Button } from "@/components/ui/button";
@@ -8,56 +8,10 @@ import { Button } from "@/components/ui/button";
 type PdfDoc = Awaited<ReturnType<typeof getDocumentProxy>>;
 
 const MAX_PX = 8192;
-const MIN_ZOOM = 0.15;
+const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 8;
 
 export function PdfPageView({
-  bytes,
-  url,
-  label,
-  page,
-}: {
-  bytes: ArrayBuffer;
-  url: string;
-  label: string;
-  page: number;
-}) {
-  const [draw, setDraw] = useState(false);
-  const src = `${url}#page=${page}&view=FitH&toolbar=1&navpanes=0`;
-
-  return (
-    <div className="relative h-full min-h-[22rem] w-full bg-neutral-200 dark:bg-neutral-900">
-      {draw ? (
-        <DrawnPage bytes={bytes} label={label} page={page} />
-      ) : (
-        <iframe
-          key={page}
-          title={label}
-          src={src}
-          className="h-full w-full border-0 bg-white"
-        />
-      )}
-      <div className="absolute right-2 bottom-2 z-10 flex gap-1">
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          onClick={() => setDraw((value) => !value)}
-        >
-          {draw ? "PDF viewer" : "Draw sheet"}
-        </Button>
-        <Button type="button" variant="secondary" size="sm" asChild>
-          <a href={src} target="_blank" rel="noreferrer">
-            <ExternalLink />
-            Open PDF
-          </a>
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function DrawnPage({
   bytes,
   label,
   page,
@@ -72,7 +26,6 @@ function DrawnPage({
   const bytesRef = useRef<ArrayBuffer | null>(null);
   const [zoom, setZoom] = useState(1);
   const [width, setWidth] = useState(0);
-  const [pageWidth, setPageWidth] = useState(0);
   const [status, setStatus] = useState(`Drawing sheet ${page}…`);
   const [drawnPage, setDrawnPage] = useState<number | null>(null);
 
@@ -99,7 +52,7 @@ function DrawnPage({
     const surface = canvas;
     let cancelled = false;
 
-    async function drawPage() {
+    async function draw() {
       try {
         if (bytesRef.current !== bytes || !pdfRef.current) {
           await closePdf(pdfRef.current);
@@ -111,11 +64,9 @@ function DrawnPage({
         const pdf = pdfRef.current;
         const pdfPage = await pdf.getPage(page);
         const base = pdfPage.getViewport({ scale: 1 });
-        if (!cancelled) {
-          setPageWidth(base.width);
-        }
         const dpr = window.devicePixelRatio || 1;
-        const scale = Math.min(zoom * dpr, MAX_PX / base.width, MAX_PX / base.height);
+        const fit = width / base.width;
+        const scale = Math.min(fit * zoom * dpr, MAX_PX / base.width, MAX_PX / base.height);
         const viewport = pdfPage.getViewport({ scale: Math.max(0.1, scale) });
         surface.width = Math.floor(viewport.width);
         surface.height = Math.floor(viewport.height);
@@ -140,7 +91,7 @@ function DrawnPage({
       }
     }
 
-    void drawPage();
+    void draw();
     return () => {
       cancelled = true;
     };
@@ -153,8 +104,6 @@ function DrawnPage({
     },
     [],
   );
-
-  const fitZoom = pageWidth > 0 && width > 8 ? width / pageWidth : 1;
 
   return (
     <div className="relative h-full min-h-[22rem] w-full">
@@ -177,7 +126,7 @@ function DrawnPage({
           size="icon-sm"
           aria-label="Zoom out"
           disabled={zoom <= MIN_ZOOM}
-          onClick={() => setZoom((value) => Math.max(MIN_ZOOM, roundZoom(value / 1.25)))}
+          onClick={() => setZoom((value) => Math.max(MIN_ZOOM, Math.round((value / 1.25) * 100) / 100))}
         >
           <Minus />
         </Button>
@@ -186,7 +135,7 @@ function DrawnPage({
           variant="secondary"
           size="icon-sm"
           aria-label="Fit page"
-          onClick={() => setZoom(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, roundZoom(fitZoom))))}
+          onClick={() => setZoom(1)}
         >
           <Scaling />
         </Button>
@@ -196,17 +145,13 @@ function DrawnPage({
           size="icon-sm"
           aria-label="Zoom in"
           disabled={zoom >= MAX_ZOOM}
-          onClick={() => setZoom((value) => Math.min(MAX_ZOOM, roundZoom(value * 1.25)))}
+          onClick={() => setZoom((value) => Math.min(MAX_ZOOM, Math.round(value * 1.25 * 100) / 100))}
         >
           <Plus />
         </Button>
       </div>
     </div>
   );
-}
-
-function roundZoom(value: number) {
-  return Math.round(value * 100) / 100;
 }
 
 async function closePdf(pdf: PdfDoc | null) {
