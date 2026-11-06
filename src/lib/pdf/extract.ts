@@ -1,4 +1,12 @@
 import type { DrawingExtract, DrawingSheet, DrawingText, GeomEntity } from "@/lib/cad/extract";
+import {
+  createOcrSession,
+  linesFromOcr,
+  pageHasLargeRaster,
+  pageNeedsOcr,
+  rasterPdfPage,
+  type OcrSession,
+} from "@/lib/pdf/ocr";
 import { extractPagePaths, MAX_PAGE_PATHS } from "@/lib/pdf/paths";
 import { reconstructPdfLines, uniqueLines } from "@/lib/pdf/text";
 import { extractTextItems, getDocumentProxy } from "unpdf";
@@ -7,6 +15,7 @@ export type ExtractProgress = {
   page: number;
   total: number;
   startedAt?: number;
+  ocr?: boolean;
 };
 
 export type ExtractPdfOptions = {
@@ -18,9 +27,9 @@ const SHEET_TITLE =
   /proposed|window schedule|\bschedule\b|elevation|section|layout|(?:site|floor|roof)\s*plan|title\s*block/i;
 
 /**
- * Council packs are PDF. The current SANS rules read notes, schedules, and
- * percentages printed on the sheet — the same strings a CAD plot puts in a
- * vector PDF. Scanned sheets with no text still fail the readable-text check.
+ * Council packs are PDF. Vector text is read first. Flattened / scanned sheets
+ * (no text layer, or notes pasted as a picture) go through in-browser WASM OCR
+ * so Check still sees titles, millimetres, and schedules.
  */
 export async function extractPdf(
   filename: string,
@@ -40,19 +49,12 @@ export async function extractPdf(
   const strings: string[] = [];
   const geometry: GeomEntity[] = [];
   const entityCounts: Record<string, number> = { PAGE: totalPages };
+  let usedOcr = false;
+  let ocr: OcrSession | null = null;
 
   for (let page = 0; page < totalPages; page += 1) {
     options.onProgress?.({ page: page + 1, total: totalPages, startedAt });
-    const lines = reconstructPdfLines(items[page] ?? []);
-    const pageTexts: DrawingText[] = lines.map((line) => ({
-      kind: "text" as const,
-      value: line.value,
-      x: line.x,
-      y: line.y,
-      height: line.height,
-      width: line.width,
-    }));
-    const pageStrings = uniqueLines(pageTexts.map((item) => item.value));
+    let lines = reconstructPdfLines(items[page] ?? []);
     let pageGeometry: GeomEntity[] = [];
     let width = 0;
     let height = 0;
@@ -75,6 +77,31 @@ export async function extractPdf(
         height = 841.89;
       }
     }
+    const rasterNotes = pageNeedsOcr(lines) || (await pageHasLargeRaster(pdf, page + 1));
+    if (rasterNotes) {
+      options.onProgress?.({ page: page + 1, total: totalPages, startedAt, ocr: true });
+      try {
+        ocr ??= await createOcrSession();
+        const { image, scale } = await rasterPdfPage(pdf, page + 1, width, height);
+        const ocrLines = linesFromOcr(await ocr.recognize(image), scale, height);
+        if (ocrLines.length) {
+          lines = [...lines, ...ocrLines];
+          usedOcr = true;
+          entityCounts.OCR = (entityCounts.OCR ?? 0) + ocrLines.length;
+        }
+      } catch {
+        // Vector text (if any) still feeds Check. OCR is best-effort.
+      }
+    }
+    const pageTexts: DrawingText[] = lines.map((line) => ({
+      kind: "text" as const,
+      value: line.value,
+      x: line.x,
+      y: line.y,
+      height: line.height,
+      width: line.width,
+    }));
+    const pageStrings = uniqueLines(pageTexts.map((item) => item.value));
     for (const line of lines) {
       pageGeometry.push({
         kind: "text",
@@ -103,6 +130,10 @@ export async function extractPdf(
     await yieldToUi();
   }
 
+  if (ocr) {
+    await ocr.terminate().catch(() => undefined);
+  }
+
   void filename;
   const first = sheets[0];
   const extract: DrawingExtract = {
@@ -114,6 +145,7 @@ export async function extractPdf(
     sheets,
     pageWidth: first?.width,
     pageHeight: first?.height,
+    ocr: usedOcr,
   };
   try {
     await pdf.cleanup();

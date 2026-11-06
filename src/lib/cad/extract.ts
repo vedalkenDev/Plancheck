@@ -61,6 +61,7 @@ export type DrawingExtract = {
   sheets: DrawingSheet[];
   pageWidth?: number;
   pageHeight?: number;
+  ocr?: boolean;
 };
 
 const JUNK =

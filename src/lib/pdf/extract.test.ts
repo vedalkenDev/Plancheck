@@ -9,6 +9,7 @@ import { extractPdf, nameSheet, type ExtractProgress } from "./extract";
 import {
   marineDriveGlyphPdf,
   marineDriveNotesPdf,
+  marineDriveRasterPdf,
   marineDriveSetPdf,
   measuredWindowNotesPdf,
   thinFloorplanPdf,
@@ -288,6 +289,27 @@ describe("pdf council set", () => {
     const extract = await extractPdf("blank.pdf", bytes);
     const audit = auditFromDrawing("blank.pdf", extract);
     assert.equal(audit.failed.some((row) => row.id === "readable-text"), true);
+  });
+
+  it("OCRs a flattened notes PDF the same way as the text layer", { timeout: 180_000 }, async () => {
+    const textBytes = await marineDriveNotesPdf();
+    const rasterBytes = await marineDriveRasterPdf();
+    const fromText = await extractPdf("marine-drive-notes.pdf", textBytes);
+    const fromRaster = await extractPdf("marine-drive-notes-raster.pdf", rasterBytes);
+    assert.equal(fromText.ocr, false);
+    assert.equal(fromRaster.ocr, true);
+    assert.ok(fromRaster.strings.some((line) => /Occupancy H4 dwelling/i.test(line)));
+    assert.ok(fromRaster.geometry.some((entity) => entity.kind === "text" && /H4/i.test(entity.value)));
+
+    const textAudit = auditFromDrawing("marine-drive-notes.pdf", fromText);
+    const rasterAudit = auditFromDrawing("marine-drive-notes-raster.pdf", fromRaster);
+    assert.equal(rasterAudit.occupancy, "H4");
+    assert.match(rasterAudit.address, /69 Marine Drive/);
+    assert.equal(rasterAudit.occupancy, textAudit.occupancy);
+    const stairs = rasterAudit.passed.find((row) => row.id === "part-m");
+    assert.match(stairs?.detail ?? "", /170/);
+    assert.match(stairs?.detail ?? "", /250/);
+    assert.ok(rasterAudit.warnings?.some((line) => /OCR/i.test(line)));
   });
 });
 

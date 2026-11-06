@@ -12,6 +12,7 @@
 
 # testing
 /coverage
+*.traineddata
 
 # next.js
 /.next/
