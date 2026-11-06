@@ -34,6 +34,11 @@ export const sampleDrawings: SampleDrawing[] = [
     href: "/samples/hartley-test2.pdf",
   },
   {
+    id: "thin-floorplan",
+    label: "Thin floor plan (dims on sheet)",
+    href: "/samples/thin-floorplan.pdf",
+  },
+  {
     id: "747-villa",
     label: "747 Villa (PDF)",
     href: "/samples/747-villa.pdf",

@@ -78,6 +78,90 @@ export async function windowPaneNotesPdf() {
   return notesPages([WINDOW_PANE_NOTES], false);
 }
 
+/** Thin floor plan: room labels, titleblock scale, and millimetres on the geometry — not a notes stack. */
+export async function thinFloorplanPdf() {
+  const pdf = await PDFDocument.create();
+  const page = pdf.addPage([1190.55, 841.89]);
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const ink = rgb(0.12, 0.11, 0.1);
+  const pt = (mm: number) => (mm * 72) / 25.4 / 100;
+  const x0 = 180;
+  const y0 = 240;
+  const w = pt(12000);
+  const h = pt(8000);
+
+  page.drawRectangle({
+    x: x0,
+    y: y0,
+    width: w,
+    height: h,
+    borderWidth: 1.2,
+    borderColor: ink,
+  });
+  page.drawLine({
+    start: { x: x0 + w / 2, y: y0 },
+    end: { x: x0 + w / 2, y: y0 + h },
+    thickness: 0.8,
+    color: ink,
+  });
+
+  const going = pt(250);
+  const treadW = pt(900);
+  for (let i = 0; i < 5; i += 1) {
+    const y = y0 + 12 + i * going;
+    page.drawLine({
+      start: { x: x0 + 10, y },
+      end: { x: x0 + 10 + treadW, y },
+      thickness: 0.7,
+      color: ink,
+    });
+  }
+
+  const winX = x0 + pt(3000);
+  const winW = pt(1800);
+  page.drawLine({
+    start: { x: winX, y: y0 - 6 },
+    end: { x: winX + winW, y: y0 - 6 },
+    thickness: 1.4,
+    color: ink,
+  });
+
+  const write = (value: string, x: number, y: number, size = 10) => {
+    page.drawText(value, { x, y, size, font, color: ink });
+  };
+
+  write("Proposed thin dwelling", 48, 800, 16);
+  write("BED ROOM", x0 + 36, y0 + h * 0.55);
+  write("KITCHEN", x0 + w / 2 + 28, y0 + h * 0.55);
+  write("12000", x0 + w / 2 - 18, y0 - 18);
+  write("8000", x0 - 36, y0 + h / 2);
+  write("170", x0 + 14, y0 + 12 + going * 4 + 8);
+  write("RISER", x0 + 58, y0 + 12 + going * 4 + 8);
+  write("250", x0 + 14, y0 + 8);
+  write("GOING", x0 + 58, y0 + 8);
+  write("W1", winX + 8, y0 + 8);
+  write("Ground 1800 x 1200", winX + 42, y0 + 8);
+
+  write("W1", 760, 520);
+  write("Ground 1800 x 1200", 760, 502);
+  write("panes 900 x 1200, 900 x 1200", 760, 484);
+
+  page.drawRectangle({
+    x: 920,
+    y: 40,
+    width: 230,
+    height: 110,
+    borderWidth: 1,
+    borderColor: ink,
+  });
+  write("SCALE 1:100", 936, 118, 11);
+  write("Occupancy H4 dwelling", 936, 98);
+  write("Ground nett floor 48 m2", 936, 80);
+  write("12 Thin Road", 936, 62);
+
+  return pdf.save();
+}
+
 async function notesPages(pages: string[][], splitGlyphs: boolean) {
   const pdf = await PDFDocument.create();
   const font = await pdf.embedFont(StandardFonts.Helvetica);

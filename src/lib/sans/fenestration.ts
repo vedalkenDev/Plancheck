@@ -32,8 +32,11 @@ const WINDOW_TYPE = /\bW(\d{1,2})\b/gi;
 const QTY_AFTER =
   /(?:[x×]\s*(\d{1,2})\b|\((\d{1,2})\)|qty\s*(\d{1,2})\b|(\d{1,2})\s*off\b)/i;
 
-export function readFenestration(blob: string): FenestrationReading {
-  const units = parseWindowUnits(blob);
+export function readFenestration(
+  blob: string,
+  extraUnits: WindowUnit[] = [],
+): FenestrationReading {
+  const units = uniqueUnits([...parseWindowUnits(blob), ...extraUnits]);
   const storeys = mergeStoreys(blob, units);
   const glazedM2 = round2(units.reduce((sum, unit) => sum + unitArea(unit), 0));
   return {
@@ -89,7 +92,13 @@ export function parseWindowUnits(blob: string): WindowUnit[] {
     if (pendingType) {
       const size = line.match(SIZE);
       if (size) {
-        const unit = fromSize(pendingType, size, line, currentStorey, `${pendingQuote} ${line}`);
+        const unit = fromSize(
+          pendingType,
+          size,
+          line,
+          storeyIn(line) ?? currentStorey,
+          `${pendingQuote} ${line}`,
+        );
         if (unit) {
           units.push(unit);
         }
@@ -219,6 +228,7 @@ function mergeStoreys(blob: string, units: WindowUnit[]): StoreyFenestration[] {
   for (const [storey, glazedM2] of glazedByStorey) {
     const item = row(storey);
     item.glazedM2 = round2(glazedM2);
+    item.floorM2 = item.floorM2 ?? matchFloor(blob, storey);
     if (item.floorM2) {
       item.measuredPercent = round1((glazedM2 / item.floorM2) * 100);
     }

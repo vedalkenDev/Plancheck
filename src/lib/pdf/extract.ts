@@ -44,7 +44,14 @@ export async function extractPdf(
   for (let page = 0; page < totalPages; page += 1) {
     options.onProgress?.({ page: page + 1, total: totalPages, startedAt });
     const lines = reconstructPdfLines(items[page] ?? []);
-    const pageTexts: DrawingText[] = lines.map((line) => ({ kind: "text" as const, value: line.value }));
+    const pageTexts: DrawingText[] = lines.map((line) => ({
+      kind: "text" as const,
+      value: line.value,
+      x: line.x,
+      y: line.y,
+      height: line.height,
+      width: line.width,
+    }));
     const pageStrings = uniqueLines(pageTexts.map((item) => item.value));
     let pageGeometry: GeomEntity[] = [];
     let width = 0;

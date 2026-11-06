@@ -7,7 +7,8 @@ import {
   type StoreyFenestration,
 } from "@/lib/sans/fenestration";
 import { needsFirePartT, occupancyFromText } from "@/lib/sans/occupancy";
-import { MAX_RISER_MM, MIN_GOING_MM, readStairs } from "@/lib/sans/stairs";
+import { MAX_RISER_MM, MIN_GOING_MM } from "@/lib/sans/stairs";
+import { readSheet, type SheetMeasure } from "@/lib/sans/sheet";
 import {
   describePanes,
   readWindowSchedule,
@@ -27,6 +28,7 @@ export type AuditContext = {
   occupancy: string;
   occupancyNote: string;
   addresses: { number: string; street: string; full: string }[];
+  sheet?: SheetMeasure;
 };
 
 type RuleResult =
@@ -224,21 +226,28 @@ export const SANS_RULES: Rule[] = [
       if (!/pool|swimming/i.test(ctx.blob)) {
         return { status: "skip" };
       }
-      const hasHeight = /1\s*[.,]?\s*2\s*m|1200\s*mm/i.test(ctx.blob);
+      const barrier = sheetOf(ctx).poolBarrierMm;
+      const hasHeight =
+        (barrier !== undefined && barrier.value >= 1200) ||
+        /1\s*[.,]?\s*2\s*m|1200\s*mm/i.test(ctx.blob);
       const hasGap = /100\s*mm/i.test(ctx.blob);
       const hasGate = /self[-\s]?clos/i.test(ctx.blob);
       if (/enclos/i.test(ctx.blob) && hasHeight && hasGap && hasGate) {
         return {
           status: "pass",
           detail: "Part D enclosure noted (≥1.2 m / 100 mm / self-closing gate)",
+          how: barrier ? "measured" : undefined,
           evidence: quotes(ctx, /enclos|1\s*[.,]?\s*2|100\s*mm|self[-\s]?clos/i),
         };
       }
       return {
         status: "fail",
-        detail: "Part D enclosure missing",
+        detail: barrier
+          ? `Part D enclosure missing (${barrier.value} mm barrier drawn)`
+          : "Part D enclosure missing",
         adjust:
           "Add a Part D pool enclosure: barrier at least 1.2 m high, openings not more than 100 mm, and a self-closing / self-latching gate.",
+        how: barrier ? "measured" : undefined,
         evidence: quotes(ctx, /pool|swimming/i),
       };
     },
@@ -300,22 +309,22 @@ export const SANS_RULES: Rule[] = [
     id: "part-o",
     part: "O",
     check: "Lighting",
-    run: (ctx) => {
-      if (/w\s*\/\s*m/i.test(ctx.blob) || /lighting/i.test(ctx.blob)) {
-        return {
-          status: "pass",
-          detail: /w\s*\/\s*m/i.test(ctx.blob) ? "W/m² noted" : "Lighting noted",
-          evidence: quotes(ctx, /lighting|w\s*\/\s*m/i),
-        };
-      }
-      return { status: "skip" };
-    },
+    run: (ctx) => partOLighting(ctx),
   },
   {
     id: "parking",
     part: "Zoning",
     check: "Parking",
     run: (ctx) => {
+      const parking = sheetOf(ctx).parking;
+      if (parking) {
+        return {
+          status: "pass",
+          detail: parking.quote,
+          how: "measured",
+          evidence: [{ quote: parking.quote }],
+        };
+      }
       const match = ctx.blob.match(/parking[^\n]{0,48}/i);
       if (!match) {
         return { status: "skip" };
@@ -338,6 +347,15 @@ export const SANS_RULES: Rule[] = [
     part: "Zoning",
     check: "Coverage",
     run: (ctx) => {
+      const coverage = sheetOf(ctx).coveragePct;
+      if (coverage) {
+        return {
+          status: "pass",
+          detail: coverage.quote,
+          how: "measured",
+          evidence: [{ quote: coverage.quote }],
+        };
+      }
       const match = ctx.blob.match(/coverage[^\n]{0,40}/i);
       if (!match) {
         return { status: "skip" };
@@ -354,6 +372,15 @@ export const SANS_RULES: Rule[] = [
     part: "A",
     check: "Site area",
     run: (ctx) => {
+      const area = sheetOf(ctx).siteAreaM2;
+      if (area) {
+        return {
+          status: "pass",
+          detail: area.quote,
+          how: "measured",
+          evidence: [{ quote: area.quote }],
+        };
+      }
       const match = ctx.blob.match(/site\s*area[^\n]{0,32}/i);
       if (!match) {
         return { status: "skip" };
@@ -421,18 +448,20 @@ export const SANS_RULES: Rule[] = [
 ];
 
 function partNWindows(ctx: AuditContext): RuleResult {
-  const reading = readWindowSchedule(ctx.blob);
-  const hasWindows = /window|fenestr|glaz/i.test(ctx.blob);
+  const sheet = sheetOf(ctx);
+  const reading = readWindowSchedule(ctx.blob, sheet.windows);
+  const hasWindows = /window|fenestr|glaz/i.test(ctx.blob) || sheet.windows.length > 0;
+  const measured = reading.overall.length > 0 || reading.panes.length > 0;
   const evidence = quotes(
     ctx,
-    /window schedule|W\d{1,2}|panes?|sashes?|fixed|openable|casement/i,
+    /window schedule|W\d{1,2}|panes?|sashes?|fixed|openable|casement|\d+\s*[x×]\s*\d+/i,
   );
 
   if (reading.overall.length && reading.panes.length && !reading.missingPaneTypes.length) {
     return {
       status: "pass",
       detail: describePanes(reading),
-      how: "measured",
+      how: measured ? "measured" : "notes",
       evidence,
     };
   }
@@ -488,9 +517,16 @@ function partNWindows(ctx: AuditContext): RuleResult {
 }
 
 function partMStairs(ctx: AuditContext): RuleResult {
-  const stairs = readStairs(ctx.blob);
-  const hasStair = /stair/i.test(ctx.blob);
-  const evidence = quotes(ctx, /stair|riser|going|tread/i);
+  const stairs = sheetOf(ctx).stairs;
+  const hasStair =
+    /stair/i.test(ctx.blob) ||
+    stairs.source === "dimension" ||
+    stairs.source === "plotted";
+  const evidence = quotes(ctx, /stair|riser|going|tread|\b\d{3}\b/i);
+  const how: CheckHow =
+    stairs.source === "dimension" || stairs.source === "plotted" || stairs.source === "label"
+      ? "measured"
+      : "notes";
 
   if (stairs.riserMm !== undefined && stairs.goingMm !== undefined) {
     const detail = `${stairs.riserMm} mm riser, ${stairs.goingMm} mm going`;
@@ -529,6 +565,7 @@ function partMStairs(ctx: AuditContext): RuleResult {
           ? "Stair dims missing"
           : `${missing} missing`,
       adjust: `Dimension the stair ${missing} in millimetres on the drawings (riser ≤ ${MAX_RISER_MM} mm, going ≥ ${MIN_GOING_MM} mm).`,
+      how: stairs.riserMm !== undefined || stairs.goingMm !== undefined ? how : "notes",
       evidence,
     };
   }
@@ -541,7 +578,7 @@ function partMStairs(ctx: AuditContext): RuleResult {
 }
 
 function xaFenestration(ctx: AuditContext): RuleResult {
-  const reading = readFenestration(ctx.blob);
+  const reading = readFenestration(ctx.blob, sheetOf(ctx).windows);
   const storeys = reading.storeys;
   const mentionsXa = /xa/i.test(ctx.blob);
   const mentions204 = /sans\s*204/i.test(ctx.blob);
@@ -682,12 +719,37 @@ function xaAdjust(cuts: string[], measured: boolean, mismatched: boolean) {
   return `${action} Do not treat “under 20%” as XA not required.${extra}`;
 }
 
+function partOLighting(ctx: AuditContext): RuleResult {
+  const lighting = sheetOf(ctx).lightingWm2;
+  if (lighting) {
+    return {
+      status: "pass",
+      detail: `${lighting.value} W/m²`,
+      how: "measured",
+      evidence: [{ quote: lighting.quote }],
+    };
+  }
+  if (/w\s*\/\s*m/i.test(ctx.blob) || /lighting/i.test(ctx.blob)) {
+    return {
+      status: "pass",
+      detail: /w\s*\/\s*m/i.test(ctx.blob) ? "W/m² noted" : "Lighting noted",
+      evidence: quotes(ctx, /lighting|w\s*\/\s*m/i),
+    };
+  }
+  return { status: "skip" };
+}
+
+function sheetOf(ctx: AuditContext): SheetMeasure {
+  return ctx.sheet ?? readSheet(ctx.extract);
+}
+
 export function evaluateRules(ctx: AuditContext) {
   const passed: PassedCheck[] = [];
   const failed: FailedCheck[] = [];
+  const withSheet = { ...ctx, sheet: sheetOf(ctx) };
 
   for (const rule of SANS_RULES) {
-    const result = rule.run(ctx);
+    const result = rule.run(withSheet);
     if (result.status === "skip") {
       continue;
     }

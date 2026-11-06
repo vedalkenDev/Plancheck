@@ -3,6 +3,10 @@ export type DrawingText = {
   value: string;
   layer?: string;
   tag?: string;
+  x?: number;
+  y?: number;
+  height?: number;
+  width?: number;
 };
 
 export type Point = {
