@@ -106,7 +106,9 @@ export default async function WaitlistPage({ searchParams }: WaitlistPageProps) 
             <CardContent className="space-y-4">
               {refused ? (
                 <p className="text-sm leading-relaxed" role="status">
-                  This email isn't opened yet — leave your name and we'll write.
+                  {
+                    "This email isn't opened yet — leave your name and we'll write."
+                  }
                 </p>
               ) : null}
               {joined ? (
