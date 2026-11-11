@@ -130,3 +130,14 @@
     @apply font-sans;
     }
 }
+
+/* Public login / waitlist only — Check UI keeps the default tokens. */
+.public-screen {
+  --input: oklch(0.52 0 0);
+  --ring: oklch(0.52 0 0);
+}
+
+.dark .public-screen {
+  --input: oklch(0.72 0 0);
+  --ring: oklch(0.72 0 0);
+}

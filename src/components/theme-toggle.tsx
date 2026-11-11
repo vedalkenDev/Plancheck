@@ -9,7 +9,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-export function ThemeToggle() {
+export function ThemeToggle({ className }: { className?: string }) {
   const { resolvedTheme, setTheme } = useTheme();
 
   return (
@@ -19,6 +19,7 @@ export function ThemeToggle() {
           type="button"
           variant="outline"
           size="icon"
+          className={className}
           aria-label="Toggle dark and light mode"
           onClick={() => setTheme(resolvedTheme === "light" ? "dark" : "light")}
         >

@@ -37,7 +37,11 @@ export const metadata: Metadata = {
 };
 
 type WaitlistPageProps = {
-  searchParams: Promise<{ email?: string | string[]; joined?: string | string[] }>;
+  searchParams: Promise<{
+    email?: string | string[];
+    joined?: string | string[];
+    refused?: string | string[];
+  }>;
 };
 
 export default async function WaitlistPage({ searchParams }: WaitlistPageProps) {
@@ -52,14 +56,16 @@ export default async function WaitlistPage({ searchParams }: WaitlistPageProps) 
   const email = parsedEmail.ok ? parsedEmail.value : "";
   const joinedFlag = Array.isArray(params.joined) ? params.joined[0] : params.joined;
   const joined = joinedFlag === "1";
+  const refusedFlag = Array.isArray(params.refused) ? params.refused[0] : params.refused;
+  const refused = refusedFlag === "1" && Boolean(email) && !joined;
 
   return (
-    <div className="flex min-h-svh flex-col bg-background">
+    <div className="public-screen flex min-h-svh flex-col bg-background">
       <header className="flex h-16 shrink-0 items-center justify-between gap-4 border-b px-4 md:px-6">
         <p className="font-heading text-xl font-semibold tracking-tight md:text-2xl">
           Plancheck
         </p>
-        <ThemeToggle />
+        <ThemeToggle className="size-11 focus-visible:ring-ring md:size-8" />
       </header>
       <main className="mx-auto grid w-full max-w-5xl flex-1 items-start gap-12 px-6 py-16 lg:grid-cols-[minmax(0,1.15fr)_minmax(20rem,0.85fr)] lg:items-center lg:py-24">
         <section className="max-w-xl space-y-6">
@@ -97,7 +103,12 @@ export default async function WaitlistPage({ searchParams }: WaitlistPageProps) 
                   : "Name, email, and the seat you occupy. That is all we need to write to you later."}
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
+              {refused ? (
+                <p className="text-sm leading-relaxed" role="status">
+                  This email isn't opened yet — leave your name and we'll write.
+                </p>
+              ) : null}
               {joined ? (
                 <p className="text-sm leading-relaxed text-muted-foreground">
                   {email ? `${email}. ` : ""}The name is in. You can close this page.
