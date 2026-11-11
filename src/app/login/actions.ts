@@ -23,5 +23,7 @@ export async function enterEmail(
     redirect("/plancheck");
   }
 
-  redirect(`/waitlist?email=${encodeURIComponent(parsed.value)}`);
+  redirect(
+    `/waitlist?email=${encodeURIComponent(parsed.value)}&refused=1`,
+  );
 }

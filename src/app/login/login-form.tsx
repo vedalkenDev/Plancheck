@@ -1,9 +1,8 @@
 "use client";
 
 import { enterEmail, type EnterEmailState } from "@/app/login/actions";
+import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 
@@ -14,16 +13,13 @@ export function LoginForm() {
 
   return (
     <form action={action} className="space-y-4">
-      <div className="space-y-1.5">
-        <Label htmlFor="login-email">Email</Label>
-        <Input
-          id="login-email"
-          name="email"
-          type="email"
-          autoComplete="email"
-          required
-        />
-      </div>
+      <FormField
+        id="login-email"
+        name="email"
+        label="Email"
+        type="email"
+        autoComplete="email"
+      />
       {state.error ? (
         <p className="text-sm text-destructive" role="alert">
           {state.error}
@@ -37,7 +33,12 @@ export function LoginForm() {
 function Submit() {
   const { pending } = useFormStatus();
   return (
-    <Button className="w-full" size="lg" type="submit" disabled={pending}>
+    <Button
+      className="h-11 w-full focus-visible:ring-ring md:h-9"
+      size="lg"
+      type="submit"
+      disabled={pending}
+    >
       {pending ? "Checking…" : "Continue"}
     </Button>
   );
