@@ -10,6 +10,7 @@ import {
 import { parseEmail } from "@/lib/auth/waitlist";
 import { getAllowedUser } from "@/lib/auth/session";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 export const metadata: Metadata = {
@@ -118,6 +119,14 @@ export default async function WaitlistPage({ searchParams }: WaitlistPageProps) 
               ) : (
                 <WaitlistForm email={email} />
               )}
+              <p>
+                <Link
+                  href="/login"
+                  className="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
+                >
+                  Already have access? Sign in
+                </Link>
+              </p>
             </CardContent>
           </Card>
         </aside>

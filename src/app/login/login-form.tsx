@@ -39,7 +39,7 @@ function Submit() {
       type="submit"
       disabled={pending}
     >
-      {pending ? "Checking…" : "Continue"}
+      {pending ? "Checking…" : "Continue with email"}
     </Button>
   );
 }

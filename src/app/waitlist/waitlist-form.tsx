@@ -59,6 +59,7 @@ export function WaitlistForm({ email = "" }: WaitlistFormProps) {
         </p>
       ) : null}
       <Submit />
+      <p className="text-sm text-muted-foreground">One letter. No brochure.</p>
     </form>
   );
 }

@@ -5,7 +5,6 @@ import {
   CardContent,
   CardDescription,
   CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { getAllowedUser } from "@/lib/auth/session";
 import Link from "next/link";
@@ -24,15 +23,17 @@ export default async function LoginPage() {
   return (
     <div className="public-screen flex min-h-svh flex-col bg-background">
       <header className="flex h-16 shrink-0 items-center justify-between gap-4 border-b px-4 md:px-6">
-        <h1 className="font-heading text-xl font-semibold tracking-tight md:text-2xl">
+        <p className="font-heading text-xl font-semibold tracking-tight md:text-2xl">
           Plancheck
-        </h1>
+        </p>
         <ThemeToggle className="size-11 focus-visible:ring-ring md:size-8" />
       </header>
       <main className="flex flex-1 items-center justify-center p-6">
         <Card className="w-full max-w-md">
           <CardHeader>
-            <CardTitle className="text-xl">Sign in</CardTitle>
+            <h1 className="font-heading text-xl leading-snug font-medium">
+              Sign in
+            </h1>
             <CardDescription className="space-y-2">
               <span className="block">
                 The drawing should fail in your office. Not at the counter.
