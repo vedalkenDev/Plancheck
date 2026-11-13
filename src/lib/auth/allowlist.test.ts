@@ -43,6 +43,7 @@ describe("isAllowedEmail", () => {
       "mssd1812@gmail.com",
       "mssarch@wol.co.za",
       "ahmed@aoarch.co.za",
+      "muhammed@eminen.co.za",
     ]);
     assert.equal(isAllowedEmail("Vedalken.dev@gmail.com"), true);
     assert.equal(isAllowedEmail("uwaism0502@gmail.com"), true);
@@ -51,6 +52,7 @@ describe("isAllowedEmail", () => {
     assert.equal(isAllowedEmail("mssd1812@gmail.com"), true);
     assert.equal(isAllowedEmail("Mssarch@wol.co.za"), true);
     assert.equal(isAllowedEmail("Ahmed@aoarch.co.za"), true);
+    assert.equal(isAllowedEmail("Muhammed@eminen.co.za"), true);
     assert.equal(isAllowedEmail("other@gmail.com"), false);
     assert.equal(isAllowedEmail(null), false);
   });
