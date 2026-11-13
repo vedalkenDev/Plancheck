@@ -7,6 +7,7 @@ const DEFAULT_ALLOWED = [
   "mssarch@wol.co.za",
   "ahmed@aoarch.co.za",
   "muhammed@eminen.co.za",
+  "laila@ltkarchitects.co.za",
 ];
 
 export function allowedEmails() {
